@@ -64,6 +64,10 @@ const tempChart = makeSparkline(document.getElementById('tempChart'), '#e2503b')
 async function tick() {
   try {
     const res = await fetch('/api/stats');
+    if (res.status === 401) {
+      location.href = `/login.html?returnTo=${encodeURIComponent(location.pathname)}`;
+      return;
+    }
     if (!res.ok) throw new Error('bad response');
     const s = await res.json();
 
@@ -75,7 +79,7 @@ async function tick() {
 
     document.getElementById('cpuLoadValue').textContent = `${s.cpu.loadPercent}%`;
     document.getElementById('cpuBrand').textContent = s.cpu.brand || '';
-    document.getElementById('cpuCores').textContent = `${s.cpu.cores} rdzeni / ${s.cpu.threads} wątków`;
+    document.getElementById('cpuCores').textContent = `${s.cpu.cores} cores / ${s.cpu.threads} threads`;
     pushPoint(cpuChart, s.cpu.loadPercent);
 
     const temp = s.cpu.tempMain;
@@ -111,11 +115,41 @@ async function tick() {
       `;
       disksList.appendChild(row);
     });
+
+    const fansList = document.getElementById('fansList');
+    fansList.innerHTML = '';
+    if (s.fans.length === 0) {
+      fansList.innerHTML = '<p class="muted small">No fan sensors detected on this board/kernel.</p>';
+    } else {
+      s.fans.forEach((f) => {
+        const row = document.createElement('div');
+        row.className = 'net-row';
+        row.innerHTML = `<span class="muted small">${f.label}</span><strong>${f.rpm} RPM</strong>`;
+        fansList.appendChild(row);
+      });
+    }
   } catch (err) {
     document.querySelector('.status-dot').classList.remove('online');
     console.error(err);
   }
 }
 
+async function loadUser() {
+  try {
+    const res = await fetch('/auth/me');
+    if (!res.ok) return;
+    const user = await res.json();
+    document.getElementById('userName').textContent = user.username;
+  } catch {
+    /* ignore */
+  }
+}
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/auth/logout', { method: 'POST' });
+  location.href = '/login.html';
+});
+
+loadUser();
 tick();
 setInterval(tick, POLL_MS);

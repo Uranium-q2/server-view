@@ -6,9 +6,8 @@ const http = require('http');
 const cookieParser = require('cookie-parser');
 const si = require('systeminformation');
 
-const store = require('./lib/containers-store');
-const dockerActions = require('./lib/docker-actions');
 const auth = require('./lib/auth');
+const { readFans } = require('./lib/fans');
 
 const app = express();
 const PORT = process.env.PORT || 8642;
@@ -126,93 +125,13 @@ app.get('/api/stats', async (req, res) => {
         iface: net.iface,
         rxSec: net.rx_sec || 0,
         txSec: net.tx_sec || 0
-      }
+      },
+      fans: readFans()
     });
   } catch (err) {
     console.error('Failed to read system stats:', err);
     res.status(500).json({ error: 'Failed to read system stats', details: String(err) });
   }
-});
-
-// ---------- Docker containers: config CRUD ----------
-
-app.get('/api/containers', async (req, res) => {
-  const containers = store.list();
-  const withStatus = await Promise.all(
-    containers.map(async (c) => ({ ...c, status: await dockerActions.getContainerStatus(c) }))
-  );
-  res.json(withStatus);
-});
-
-app.post('/api/containers', (req, res) => {
-  const entry = store.create(req.body || {});
-  res.status(201).json(entry);
-});
-
-app.put('/api/containers/:id', (req, res) => {
-  const updated = store.update(req.params.id, req.body || {});
-  if (!updated) return res.status(404).json({ error: 'Container not found' });
-  res.json(updated);
-});
-
-app.delete('/api/containers/:id', (req, res) => {
-  const ok = store.remove(req.params.id);
-  if (!ok) return res.status(404).json({ error: 'Container not found' });
-  res.status(204).end();
-});
-
-app.get('/api/containers/:id/status', async (req, res) => {
-  const container = store.get(req.params.id);
-  if (!container) return res.status(404).json({ error: 'Container not found' });
-  res.json(await dockerActions.getContainerStatus(container));
-});
-
-// ---------- Docker containers: logs (read-only) ----------
-
-app.post('/api/containers/:id/logs', (req, res) => {
-  const container = store.get(req.params.id);
-  if (!container) return res.status(404).json({ error: 'Container not found' });
-
-  try {
-    const actionId = dockerActions.startLogsAction(container);
-    res.json({ actionId });
-  } catch (err) {
-    res.status(500).json({ error: String(err.message || err) });
-  }
-});
-
-app.get('/api/actions/:actionId/stream', (req, res) => {
-  const { actionId } = req.params;
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive'
-  });
-
-  const onData = (line, exitCode) => {
-    if (line !== null && line !== undefined) {
-      res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`);
-    } else {
-      res.write(`event: exit\ndata: ${JSON.stringify({ exitCode })}\n\n`);
-      res.end();
-    }
-  };
-
-  const record = dockerActions.subscribe(actionId, onData);
-  if (!record) {
-    res.write(`event: error\ndata: ${JSON.stringify({ error: 'Unknown action id' })}\n\n`);
-    return res.end();
-  }
-
-  // Replay whatever already happened before this client connected.
-  record.buffer.forEach((line) => res.write(`event: log\ndata: ${JSON.stringify(line)}\n\n`));
-  if (record.done) {
-    res.write(`event: exit\ndata: ${JSON.stringify({ exitCode: record.exitCode })}\n\n`);
-    return res.end();
-  }
-
-  req.on('close', () => dockerActions.unsubscribe(actionId, onData));
 });
 
 const server = http.createServer(app);
