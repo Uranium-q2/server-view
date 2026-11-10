@@ -67,8 +67,7 @@ async function tick() {
     if (!res.ok) throw new Error('bad response');
     const s = await res.json();
 
-    document.getElementById('connStatus').classList.remove('offline');
-    document.querySelector('.status-dot').classList.add('online');
+    document.querySelector('#connStatus .status-dot').classList.add('online');
 
     document.getElementById('hostname').textContent = s.hostname || 'server-view';
     document.getElementById('platform').textContent = s.platform || '';
@@ -80,7 +79,7 @@ async function tick() {
     pushPoint(cpuChart, s.cpu.loadPercent);
 
     const temp = s.cpu.tempMain;
-    document.getElementById('tempValue').textContent = temp && temp > 0 ? `${temp.toFixed(1)}°C` : 'brak danych';
+    document.getElementById('tempValue').textContent = temp && temp > 0 ? `${temp.toFixed(1)}°C` : 'n/a';
     document.getElementById('tempMax').textContent = s.cpu.tempMax && s.cpu.tempMax > 0 ? s.cpu.tempMax.toFixed(1) : '—';
     if (!tempChart.options.scales.y.max) tempChart.options.scales.y.max = 100;
     pushPoint(tempChart, temp && temp > 0 ? temp : null);
@@ -93,7 +92,7 @@ async function tick() {
     document.getElementById('swapBar').style.width = `${s.mem.swapPercent}%`;
     document.getElementById('swapDetail').textContent = s.mem.swapTotal > 0
       ? `${fmtBytes(s.mem.swapUsed)} / ${fmtBytes(s.mem.swapTotal)}`
-      : 'brak swapu';
+      : 'no swap';
 
     document.getElementById('netRx').textContent = fmtRate(s.network.rxSec);
     document.getElementById('netTx').textContent = fmtRate(s.network.txSec);

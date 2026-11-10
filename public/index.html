@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -15,8 +15,19 @@
       <span class="brand-name">Server View</span>
     </div>
     <nav class="sidebar-nav">
-      <a class="nav-item active" href="#"><span class="dot"></span>Przegląd</a>
+      <a class="nav-item active" href="index.html"><span class="dot"></span>Overview</a>
+      <a class="nav-item" href="containers.html"><span class="dot"></span>Docker Containers</a>
+      <a class="nav-item" href="terminal.html"><span class="dot"></span>Terminal</a>
+      <a class="nav-item" href="settings.html"><span class="dot"></span>Settings</a>
     </nav>
+
+    <div class="sidebar-stats" id="sidebarStats">
+      <div class="qs-row"><span class="muted small">Uptime</span><strong id="qsUptime">—</strong></div>
+      <div class="qs-row"><span class="muted small">CPU</span><strong id="qsCpu">—</strong></div>
+      <div class="qs-row"><span class="muted small">Temp</span><strong id="qsTemp">—</strong></div>
+      <div class="qs-row"><span class="muted small">RAM</span><strong id="qsRam">—</strong></div>
+    </div>
+
     <div class="sidebar-footer">
       <div class="status-pill" id="connStatus"><span class="status-dot online"></span>Online</div>
     </div>
@@ -29,7 +40,7 @@
         <p id="platform" class="muted">—</p>
       </div>
       <div class="uptime-box">
-        <span class="muted">Czas pracy</span>
+        <span class="muted">Uptime</span>
         <strong id="uptime">—</strong>
       </div>
     </header>
@@ -49,18 +60,18 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Temperatura CPU</h2>
+          <h2>CPU Temperature</h2>
           <span class="value" id="tempValue">—°C</span>
         </div>
         <canvas id="tempChart" height="90"></canvas>
         <div class="card-footer">
-          <span class="muted small">Maks. rdzeń: <span id="tempMax">—</span>°C</span>
+          <span class="muted small">Max core: <span id="tempMax">—</span>°C</span>
         </div>
       </div>
 
       <div class="card">
         <div class="card-header">
-          <h2>Pamięć RAM</h2>
+          <h2>Memory</h2>
           <span class="value" id="memValue">0%</span>
         </div>
         <div class="bar"><div class="bar-fill" id="memBar"></div></div>
@@ -82,17 +93,17 @@
 
       <div class="card">
         <div class="card-header">
-          <h2>Sieć</h2>
+          <h2>Network</h2>
         </div>
         <div class="net-rows">
-          <div class="net-row"><span class="muted small">Pobieranie</span><strong id="netRx">0 KB/s</strong></div>
-          <div class="net-row"><span class="muted small">Wysyłanie</span><strong id="netTx">0 KB/s</strong></div>
+          <div class="net-row"><span class="muted small">Download</span><strong id="netRx">0 KB/s</strong></div>
+          <div class="net-row"><span class="muted small">Upload</span><strong id="netTx">0 KB/s</strong></div>
         </div>
       </div>
 
       <div class="card disks-card">
         <div class="card-header">
-          <h2>Dyski</h2>
+          <h2>Disks</h2>
         </div>
         <div id="disksList" class="disks-list"></div>
       </div>
@@ -100,6 +111,7 @@
   </main>
 </div>
 
+<script src="js/sidebar.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -5,11 +5,17 @@ services:
     restart: unless-stopped
     ports:
       - "8642:8642"
-    # Potrzebne, zeby kontener widzial realne dane hosta (CPU/RAM/temperatura),
-    # a nie tylko wlasny, odizolowany widok procesow.
+    # privileged + pid: host let the container see real host stats (CPU/RAM/
+    # temperature) and, via `nsenter` (lib/host-exec.js), run the Terminal
+    # page and Docker container actions directly on the HOST instead of
+    # inside this container. This effectively grants root-level access to
+    # the host from the container - only run this on a trusted local
+    # network, exactly as intended for this tool.
+    privileged: true
     pid: host
     volumes:
       - /proc:/proc:ro
       - /sys:/sys:ro
+      - ./data:/app/data
     environment:
       - NODE_ENV=production

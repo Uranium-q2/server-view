@@ -1,7 +1,7 @@
 {
   "name": "server-view",
   "version": "1.0.0",
-  "description": "Lekki dashboard monitorujacy CPU/RAM/dysk/siec/temperature serwera (Ubuntu), w stylu Pterodactyl.",
+  "description": "Lightweight server dashboard (CPU/RAM/disk/network/temperature + Docker container management + web terminal), styled after Pterodactyl.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -9,6 +9,11 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
-    "systeminformation": "^5.23.5"
+    "systeminformation": "^5.23.5",
+    "ws": "^8.18.0",
+    "uuid": "^9.0.1"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.0.0"
   }
 }

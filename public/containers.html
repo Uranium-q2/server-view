@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Server View — Docker Containers</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">&#9632;</span>
+      <span class="brand-name">Server View</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item" href="index.html"><span class="dot"></span>Overview</a>
+      <a class="nav-item active" href="containers.html"><span class="dot"></span>Docker Containers</a>
+      <a class="nav-item" href="terminal.html"><span class="dot"></span>Terminal</a>
+      <a class="nav-item" href="settings.html"><span class="dot"></span>Settings</a>
+    </nav>
+
+    <div class="sidebar-stats" id="sidebarStats">
+      <div class="qs-row"><span class="muted small">Uptime</span><strong id="qsUptime">—</strong></div>
+      <div class="qs-row"><span class="muted small">CPU</span><strong id="qsCpu">—</strong></div>
+      <div class="qs-row"><span class="muted small">Temp</span><strong id="qsTemp">—</strong></div>
+      <div class="qs-row"><span class="muted small">RAM</span><strong id="qsRam">—</strong></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="status-pill" id="connStatus"><span class="status-dot online"></span>Online</div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <div>
+        <h1>Docker Containers</h1>
+        <p class="muted">Start, stop and restart the Docker Compose projects configured in Settings.</p>
+      </div>
+    </header>
+
+    <section id="containersList" class="containers-grid">
+      <p class="muted">Loading…</p>
+    </section>
+
+    <div class="console-overlay" id="consoleOverlay">
+      <div class="console-box">
+        <div class="console-header">
+          <span id="consoleTitle">Console</span>
+          <button class="btn-icon" id="consoleClose">&times;</button>
+        </div>
+        <pre class="console-output" id="consoleOutput"></pre>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/containers.js"></script>
+</body>
+</html>

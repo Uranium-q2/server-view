@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Server View — Settings</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">&#9632;</span>
+      <span class="brand-name">Server View</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item" href="index.html"><span class="dot"></span>Overview</a>
+      <a class="nav-item" href="containers.html"><span class="dot"></span>Docker Containers</a>
+      <a class="nav-item" href="terminal.html"><span class="dot"></span>Terminal</a>
+      <a class="nav-item active" href="settings.html"><span class="dot"></span>Settings</a>
+    </nav>
+
+    <div class="sidebar-stats" id="sidebarStats">
+      <div class="qs-row"><span class="muted small">Uptime</span><strong id="qsUptime">—</strong></div>
+      <div class="qs-row"><span class="muted small">CPU</span><strong id="qsCpu">—</strong></div>
+      <div class="qs-row"><span class="muted small">Temp</span><strong id="qsTemp">—</strong></div>
+      <div class="qs-row"><span class="muted small">RAM</span><strong id="qsRam">—</strong></div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="status-pill" id="connStatus"><span class="status-dot online"></span>Online</div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <div>
+        <h1>Settings</h1>
+        <p class="muted">Add and configure the Docker Compose projects shown on the Docker Containers page.</p>
+      </div>
+    </header>
+
+    <section class="card form-card">
+      <h2 id="formTitle">Add container</h2>
+      <form id="containerForm">
+        <input type="hidden" id="containerId" />
+
+        <label>Name
+          <input type="text" id="fieldName" placeholder="e.g. piano-transcription-server" required />
+        </label>
+
+        <label>Container location
+          <input type="text" id="fieldLocation" placeholder="e.g. /home/user/piano-transcription-server" required />
+        </label>
+
+        <div class="form-grid">
+          <label>Start command
+            <input type="text" id="cmdStart" placeholder="docker compose up -d --build" />
+          </label>
+          <label>Stop command
+            <input type="text" id="cmdStop" placeholder="docker compose down" />
+          </label>
+          <label>Restart command
+            <input type="text" id="cmdRestart" placeholder="docker compose restart" />
+          </label>
+        </div>
+
+        <div class="form-grid toggles">
+          <label class="toggle"><input type="checkbox" id="enStart" checked /> Enable Start button</label>
+          <label class="toggle"><input type="checkbox" id="enStop" checked /> Enable Stop button</label>
+          <label class="toggle"><input type="checkbox" id="enRestart" checked /> Enable Restart button</label>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-start" id="submitBtn">Add container</button>
+          <button type="button" class="btn btn-stop" id="cancelEditBtn" style="display:none;">Cancel edit</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Configured containers</h2>
+      <div id="settingsList"></div>
+    </section>
+  </main>
+</div>
+
+<script src="js/sidebar.js"></script>
+<script src="js/settings.js"></script>
+</body>
+</html>
