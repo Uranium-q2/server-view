@@ -1,5 +1,9 @@
 const POLL_MS = 2000;
-const HISTORY_LEN = 30;
+const BUFFER_LEN = 150; // ~5 min of history at 2s/sample, for CPU/Mem/Network/Disk
+const UPTIME_SAMPLE_MS = 60000; // sample uptime into long-term history once a minute
+const UPTIME_MAX_POINTS = 10000; // ~1 week at 1-minute resolution
+const UPTIME_Y_MAX_HOURS = 100000; // "gigantic" fixed ceiling so only real long-haul uptime climbs it
+const UPTIME_STORAGE_KEY = 'sv_uptime_history';
 
 function fmtBytes(bytes) {
   if (!bytes || bytes <= 0) return '0 B';
@@ -23,43 +27,304 @@ function fmtUptime(seconds) {
   return parts.join(' ');
 }
 
-function makeSparkline(ctx, color) {
-  return new Chart(ctx, {
+function sanitizeKey(s) {
+  return s.replace(/[^a-zA-Z0-9]/g, '_');
+}
+
+// ---------- Rolling in-memory history (resets on page reload, like Task Manager) ----------
+
+const history = {
+  cpu: Array(BUFFER_LEN).fill(null),
+  mem: Array(BUFFER_LEN).fill(null),
+  netRx: Array(BUFFER_LEN).fill(null),
+  netTx: Array(BUFFER_LEN).fill(null),
+  perCore: [], // array of arrays, one per logical core
+  disks: {} // mount -> array
+};
+
+function pushRolling(arr, value) {
+  arr.push(value);
+  if (arr.length > BUFFER_LEN) arr.shift();
+}
+
+// ---------- Long-term uptime history (persisted across reloads) ----------
+
+function loadUptimeHistory() {
+  try {
+    return JSON.parse(localStorage.getItem(UPTIME_STORAGE_KEY)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUptimeHistory(points) {
+  try {
+    localStorage.setItem(UPTIME_STORAGE_KEY, JSON.stringify(points));
+  } catch {
+    /* storage full/unavailable - ignore, it's a non-critical convenience */
+  }
+}
+
+let uptimeHistory = loadUptimeHistory();
+let lastUptimeSampleAt = 0;
+
+function recordUptimeSample(uptimeSeconds) {
+  const now = Date.now();
+  if (now - lastUptimeSampleAt < UPTIME_SAMPLE_MS) return;
+  lastUptimeSampleAt = now;
+  uptimeHistory.push({ t: now, h: uptimeSeconds / 3600 });
+  if (uptimeHistory.length > UPTIME_MAX_POINTS) uptimeHistory.shift();
+  saveUptimeHistory(uptimeHistory);
+}
+
+// ---------- Chart helpers ----------
+
+function makeThumbnail(canvas, color) {
+  return new Chart(canvas, {
     type: 'line',
     data: {
-      labels: Array(HISTORY_LEN).fill(''),
+      labels: Array(BUFFER_LEN).fill(''),
       datasets: [{
-        data: Array(HISTORY_LEN).fill(null),
+        data: Array(BUFFER_LEN).fill(null),
         borderColor: color,
         backgroundColor: color + '33',
         fill: true,
-        tension: 0.35,
+        tension: 0.3,
         pointRadius: 0,
-        borderWidth: 2
+        borderWidth: 1.5
       }]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       animation: false,
-      scales: {
-        x: { display: false },
-        y: { display: false, min: 0 }
-      },
+      scales: { x: { display: false }, y: { display: false, min: 0 } },
       plugins: { legend: { display: false }, tooltip: { enabled: false } }
     }
   });
 }
 
-function pushPoint(chart, value) {
-  const data = chart.data.datasets[0].data;
-  data.push(value);
-  data.shift();
-  chart.update('none');
+function makeDetailChart(canvas, datasets, { yMin = 0, yMax = 100, xLabels = null } = {}) {
+  return new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: xLabels || Array(datasets[0].data.length).fill(''),
+      datasets: datasets.map((d) => ({
+        label: d.label,
+        data: d.data,
+        borderColor: d.color,
+        backgroundColor: d.color + '22',
+        fill: d.fill !== false,
+        tension: 0.3,
+        pointRadius: 0,
+        borderWidth: 2
+      }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { display: false },
+        y: { display: true, min: yMin, max: yMax, grid: { color: '#2a3140' }, ticks: { color: '#8792a3' } }
+      },
+      plugins: {
+        legend: { display: datasets.length > 1, labels: { color: '#8792a3' } },
+        tooltip: { enabled: true },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            mode: 'x'
+          },
+          limits: { x: { min: 'original', max: 'original' } }
+        }
+      }
+    }
+  });
 }
 
-const cpuChart = makeSparkline(document.getElementById('cpuChart'), '#2a7de1');
-cpuChart.options.scales.y.max = 100;
-const tempChart = makeSparkline(document.getElementById('tempChart'), '#e2503b');
+// ---------- Resource list + detail selection ----------
+
+const RESOURCE_ORDER = ['cpu', 'memory', 'network', 'uptime'];
+let knownDiskMounts = [];
+const thumbnails = {}; // key -> Chart instance
+let mainChart = null;
+let perCoreCharts = [];
+let selectedKey = 'cpu';
+let cpuPerCoreView = false;
+let lastStats = null;
+
+function buildList() {
+  Object.values(thumbnails).forEach((c) => c.destroy());
+  Object.keys(thumbnails).forEach((k) => delete thumbnails[k]);
+
+  const listEl = document.getElementById('tmList');
+  listEl.innerHTML = '';
+
+  const rows = [
+    { key: 'cpu', label: 'CPU', color: '#3b82f6' },
+    { key: 'memory', label: 'Memory', color: '#e2a93b' },
+    { key: 'network', label: 'Network', color: '#3bc17a' },
+    { key: 'uptime', label: 'Uptime', color: '#8b5cf6' },
+    ...knownDiskMounts.map((mount) => ({ key: `disk:${mount}`, label: `Disk (${mount})`, color: '#e2503b' }))
+  ];
+
+  rows.forEach((row) => {
+    const el = document.createElement('div');
+    el.className = 'tm-row' + (row.key === selectedKey ? ' active' : '');
+    el.dataset.key = row.key;
+    el.innerHTML = `
+      <canvas class="tm-thumb" id="thumb-${sanitizeKey(row.key)}"></canvas>
+      <div class="tm-row-label">
+        <strong>${row.label}</strong>
+        <span class="muted small" id="rowsub-${sanitizeKey(row.key)}">—</span>
+      </div>
+    `;
+    el.addEventListener('click', () => selectKey(row.key));
+    listEl.appendChild(el);
+
+    const canvas = el.querySelector('canvas');
+    thumbnails[row.key] = makeThumbnail(canvas, row.color);
+  });
+}
+
+function selectKey(key) {
+  selectedKey = key;
+  cpuPerCoreView = false;
+  document.querySelectorAll('.tm-row').forEach((el) => {
+    el.classList.toggle('active', el.dataset.key === key);
+  });
+  renderDetail();
+}
+
+function destroyMainCharts() {
+  if (mainChart) { mainChart.destroy(); mainChart = null; }
+  perCoreCharts.forEach((c) => c.destroy());
+  perCoreCharts = [];
+}
+
+function statRow(label, value) {
+  return `<div class="stat-item"><span class="muted small">${label}</span><strong>${value}</strong></div>`;
+}
+
+function renderDetail() {
+  if (!lastStats) return;
+  const s = lastStats;
+  const title = document.getElementById('detailTitle');
+  const actions = document.getElementById('detailActions');
+  const body = document.getElementById('detailBody');
+
+  destroyMainCharts();
+  actions.innerHTML = '';
+
+  if (selectedKey === 'cpu') {
+    title.textContent = 'CPU';
+    actions.innerHTML = `
+      <button class="btn btn-toggle ${!cpuPerCoreView ? 'active' : ''}" id="btnOverview">Overview</button>
+      <button class="btn btn-toggle ${cpuPerCoreView ? 'active' : ''}" id="btnPerCore">Per core</button>
+    `;
+    document.getElementById('btnOverview').addEventListener('click', () => { cpuPerCoreView = false; renderDetail(); });
+    document.getElementById('btnPerCore').addEventListener('click', () => { cpuPerCoreView = true; renderDetail(); });
+
+    if (cpuPerCoreView) {
+      body.innerHTML = `<div class="core-grid" id="coreGrid"></div>`;
+      const grid = document.getElementById('coreGrid');
+      history.perCore.forEach((coreHistory, i) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'core-cell';
+        wrap.innerHTML = `<span class="core-label">CPU ${i}</span><canvas></canvas>`;
+        grid.appendChild(wrap);
+        const chart = makeThumbnail(wrap.querySelector('canvas'), '#3b82f6');
+        chart.data.datasets[0].data = coreHistory.slice();
+        chart.update('none');
+        perCoreCharts.push(chart);
+      });
+    } else {
+      body.innerHTML = `
+        <canvas id="mainChart" class="main-chart"></canvas>
+        <div class="stat-grid">
+          ${statRow('Utilization', `${s.cpu.loadPercent}%`)}
+          ${statRow('Speed', s.cpu.speedGHz ? `${s.cpu.speedGHz.toFixed(2)} GHz` : 'n/a')}
+          ${statRow('Base speed', s.cpu.baseSpeedGHz ? `${s.cpu.baseSpeedGHz.toFixed(2)} GHz` : 'n/a')}
+          ${statRow('Cores', s.cpu.cores)}
+          ${statRow('Logical processors', s.cpu.threads)}
+          ${statRow('Temperature', s.cpu.tempMain && s.cpu.tempMain > 0 ? `${s.cpu.tempMain.toFixed(1)}°C` : 'n/a')}
+        </div>
+      `;
+      mainChart = makeDetailChart(document.getElementById('mainChart'), [
+        { label: 'CPU %', data: history.cpu.slice(), color: '#3b82f6' }
+      ], { yMin: 0, yMax: 100 });
+    }
+  } else if (selectedKey === 'memory') {
+    title.textContent = 'Memory';
+    body.innerHTML = `
+      <canvas id="mainChart" class="main-chart"></canvas>
+      <div class="stat-grid">
+        ${statRow('In use', `${fmtBytes(s.mem.used)} (${s.mem.usePercent}%)`)}
+        ${statRow('Available', fmtBytes(s.mem.free))}
+        ${statRow('Total', fmtBytes(s.mem.total))}
+        ${statRow('Swap', s.mem.swapTotal > 0 ? `${fmtBytes(s.mem.swapUsed)} / ${fmtBytes(s.mem.swapTotal)}` : 'no swap')}
+      </div>
+    `;
+    mainChart = makeDetailChart(document.getElementById('mainChart'), [
+      { label: 'Memory %', data: history.mem.slice(), color: '#e2a93b' }
+    ], { yMin: 0, yMax: 100 });
+  } else if (selectedKey === 'network') {
+    title.textContent = 'Network';
+    body.innerHTML = `
+      <canvas id="mainChart" class="main-chart"></canvas>
+      <div class="stat-grid">
+        ${statRow('Interface', s.network.iface || 'n/a')}
+        ${statRow('Download', fmtRate(s.network.rxSec))}
+        ${statRow('Upload', fmtRate(s.network.txSec))}
+      </div>
+    `;
+    const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean));
+    mainChart = makeDetailChart(document.getElementById('mainChart'), [
+      { label: 'Download B/s', data: history.netRx.slice(), color: '#3bc17a' },
+      { label: 'Upload B/s', data: history.netTx.slice(), color: '#3b82f6' }
+    ], { yMin: 0, yMax: maxRate * 1.2 });
+  } else if (selectedKey === 'uptime') {
+    title.textContent = 'Uptime';
+    const startedAt = new Date(Date.now() - s.uptime * 1000);
+    body.innerHTML = `
+      <canvas id="mainChart" class="main-chart"></canvas>
+      <div class="stat-grid">
+        ${statRow('Current uptime', fmtUptime(s.uptime))}
+        ${statRow('Running since', startedAt.toLocaleString())}
+        ${statRow('Chart ceiling', `${UPTIME_Y_MAX_HOURS.toLocaleString()} h`)}
+      </div>
+    `;
+    const points = uptimeHistory.map((p) => p.h);
+    mainChart = makeDetailChart(document.getElementById('mainChart'), [
+      { label: 'Uptime (hours)', data: points, color: '#8b5cf6' }
+    ], { yMin: 0, yMax: UPTIME_Y_MAX_HOURS });
+  } else if (selectedKey.startsWith('disk:')) {
+    const mount = selectedKey.slice(5);
+    const disk = s.disks.find((d) => d.mount === mount);
+    title.textContent = `Disk (${mount})`;
+    body.innerHTML = `
+      <canvas id="mainChart" class="main-chart"></canvas>
+      <div class="stat-grid">
+        ${statRow('Used', disk ? `${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}` : 'n/a')}
+        ${statRow('Usage', disk ? `${disk.usePercent}%` : 'n/a')}
+      </div>
+    `;
+    mainChart = makeDetailChart(document.getElementById('mainChart'), [
+      { label: 'Usage %', data: (history.disks[mount] || []).slice(), color: '#e2503b' }
+    ], { yMin: 0, yMax: 100 });
+  }
+
+  if (mainChart) {
+    const canvas = document.getElementById('mainChart');
+    canvas.ondblclick = () => mainChart.resetZoom();
+  }
+}
+
+// ---------- Poll loop ----------
 
 async function tick() {
   try {
@@ -70,64 +335,62 @@ async function tick() {
     }
     if (!res.ok) throw new Error('bad response');
     const s = await res.json();
+    lastStats = s;
 
     document.querySelector('#connStatus .status-dot').classList.add('online');
-
-    document.getElementById('hostname').textContent = s.hostname || 'server-view';
+    document.getElementById('hostname').textContent = s.hostname || 'server';
     document.getElementById('platform').textContent = s.platform || '';
     document.getElementById('uptime').textContent = fmtUptime(s.uptime);
 
-    document.getElementById('cpuLoadValue').textContent = `${s.cpu.loadPercent}%`;
-    document.getElementById('cpuBrand').textContent = s.cpu.brand || '';
-    document.getElementById('cpuCores').textContent = `${s.cpu.cores} cores / ${s.cpu.threads} threads`;
-    pushPoint(cpuChart, s.cpu.loadPercent);
+    const mounts = s.disks.map((d) => d.mount);
+    const mountsChanged = mounts.length !== knownDiskMounts.length || mounts.some((m, i) => m !== knownDiskMounts[i]);
+    if (mountsChanged) {
+      knownDiskMounts = mounts;
+      mounts.forEach((m) => { if (!history.disks[m]) history.disks[m] = Array(BUFFER_LEN).fill(null); });
+      buildList();
+    }
 
-    const temp = s.cpu.tempMain;
-    document.getElementById('tempValue').textContent = temp && temp > 0 ? `${temp.toFixed(1)}°C` : 'n/a';
-    document.getElementById('tempMax').textContent = s.cpu.tempMax && s.cpu.tempMax > 0 ? s.cpu.tempMax.toFixed(1) : '—';
-    if (!tempChart.options.scales.y.max) tempChart.options.scales.y.max = 100;
-    pushPoint(tempChart, temp && temp > 0 ? temp : null);
+    if (history.perCore.length !== s.cpu.perCore.length) {
+      history.perCore = s.cpu.perCore.map(() => Array(BUFFER_LEN).fill(null));
+    }
 
-    document.getElementById('memValue').textContent = `${s.mem.usePercent}%`;
-    document.getElementById('memBar').style.width = `${s.mem.usePercent}%`;
-    document.getElementById('memDetail').textContent = `${fmtBytes(s.mem.used)} / ${fmtBytes(s.mem.total)}`;
+    pushRolling(history.cpu, s.cpu.loadPercent);
+    pushRolling(history.mem, s.mem.usePercent);
+    pushRolling(history.netRx, s.network.rxSec);
+    pushRolling(history.netTx, s.network.txSec);
+    s.cpu.perCore.forEach((v, i) => pushRolling(history.perCore[i], v));
+    mounts.forEach((m, i) => pushRolling(history.disks[m], s.disks[i].usePercent));
+    recordUptimeSample(s.uptime);
 
-    document.getElementById('swapValue').textContent = `${s.mem.swapPercent}%`;
-    document.getElementById('swapBar').style.width = `${s.mem.swapPercent}%`;
-    document.getElementById('swapDetail').textContent = s.mem.swapTotal > 0
-      ? `${fmtBytes(s.mem.swapUsed)} / ${fmtBytes(s.mem.swapTotal)}`
-      : 'no swap';
-
-    document.getElementById('netRx').textContent = fmtRate(s.network.rxSec);
-    document.getElementById('netTx').textContent = fmtRate(s.network.txSec);
-
-    const disksList = document.getElementById('disksList');
-    disksList.innerHTML = '';
-    s.disks.forEach((d) => {
-      const row = document.createElement('div');
-      row.className = 'disk-row';
-      row.innerHTML = `
-        <div class="disk-row-top">
-          <span>${d.mount}</span>
-          <span class="muted">${fmtBytes(d.used)} / ${fmtBytes(d.size)} (${d.usePercent}%)</span>
-        </div>
-        <div class="bar"><div class="bar-fill" style="width:${d.usePercent}%"></div></div>
-      `;
-      disksList.appendChild(row);
+    // Update thumbnails
+    thumbnails.cpu.data.datasets[0].data = history.cpu.slice();
+    thumbnails.cpu.update('none');
+    thumbnails.memory.data.datasets[0].data = history.mem.slice();
+    thumbnails.memory.update('none');
+    const netCombined = history.netRx.map((v, i) => (v || 0) + (history.netTx[i] || 0));
+    thumbnails.network.data.datasets[0].data = netCombined;
+    thumbnails.network.update('none');
+    thumbnails.uptime.data.datasets[0].data = uptimeHistory.slice(-BUFFER_LEN).map((p) => p.h);
+    thumbnails.uptime.update('none');
+    mounts.forEach((m) => {
+      const key = `disk:${m}`;
+      if (thumbnails[key]) {
+        thumbnails[key].data.datasets[0].data = history.disks[m].slice();
+        thumbnails[key].update('none');
+      }
     });
 
-    const fansList = document.getElementById('fansList');
-    fansList.innerHTML = '';
-    if (s.fans.length === 0) {
-      fansList.innerHTML = '<p class="muted small">No fan sensors detected on this board/kernel.</p>';
-    } else {
-      s.fans.forEach((f) => {
-        const row = document.createElement('div');
-        row.className = 'net-row';
-        row.innerHTML = `<span class="muted small">${f.label}</span><strong>${f.rpm} RPM</strong>`;
-        fansList.appendChild(row);
-      });
-    }
+    const setSub = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+    setSub('rowsub-cpu', `${s.cpu.loadPercent}% ${s.cpu.speedGHz ? s.cpu.speedGHz.toFixed(2) + ' GHz' : ''}`);
+    setSub('rowsub-memory', `${fmtBytes(s.mem.used)}/${fmtBytes(s.mem.total)} (${s.mem.usePercent}%)`);
+    setSub('rowsub-network', `↓ ${fmtRate(s.network.rxSec)} ↑ ${fmtRate(s.network.txSec)}`);
+    setSub('rowsub-uptime', fmtUptime(s.uptime));
+    s.disks.forEach((d) => setSub(`rowsub-${sanitizeKey(`disk:${d.mount}`)}`, `${d.usePercent}%`));
+
+    renderDetail();
   } catch (err) {
     document.querySelector('.status-dot').classList.remove('online');
     console.error(err);
@@ -150,6 +413,7 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
   location.href = '/login.html';
 });
 
+buildList();
 loadUser();
 tick();
 setInterval(tick, POLL_MS);

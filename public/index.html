@@ -3,16 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Server View</title>
+<title>Web Task Manager</title>
 <link rel="stylesheet" href="css/style.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
 <main class="content">
   <header class="topbar">
     <div>
-      <h1 id="hostname">—</h1>
-      <p id="platform" class="muted">—</p>
+      <h1>Web Task Manager</h1>
+      <p class="muted"><span id="hostname">—</span> · <span id="platform">—</span></p>
     </div>
     <div class="topbar-right">
       <div class="uptime-box">
@@ -25,74 +27,15 @@
     </div>
   </header>
 
-  <section class="grid">
-    <div class="card">
-      <div class="card-header">
-        <h2>CPU</h2>
-        <span class="value" id="cpuLoadValue">0%</span>
-      </div>
-      <canvas id="cpuChart" height="90"></canvas>
-      <div class="card-footer">
-        <span id="cpuBrand" class="muted small">—</span>
-        <span id="cpuCores" class="muted small">—</span>
-      </div>
-    </div>
+  <section class="tm-layout">
+    <div class="tm-list" id="tmList"></div>
 
-    <div class="card">
-      <div class="card-header">
-        <h2>CPU Temperature</h2>
-        <span class="value" id="tempValue">—°C</span>
+    <div class="tm-detail card" id="tmDetail">
+      <div class="tm-detail-header">
+        <h2 id="detailTitle">CPU</h2>
+        <div class="tm-detail-actions" id="detailActions"></div>
       </div>
-      <canvas id="tempChart" height="90"></canvas>
-      <div class="card-footer">
-        <span class="muted small">Max core: <span id="tempMax">—</span>°C</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <h2>Memory</h2>
-        <span class="value" id="memValue">0%</span>
-      </div>
-      <div class="bar"><div class="bar-fill" id="memBar"></div></div>
-      <div class="card-footer">
-        <span class="muted small" id="memDetail">—</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <h2>Swap</h2>
-        <span class="value" id="swapValue">0%</span>
-      </div>
-      <div class="bar"><div class="bar-fill alt" id="swapBar"></div></div>
-      <div class="card-footer">
-        <span class="muted small" id="swapDetail">—</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <h2>Network</h2>
-      </div>
-      <div class="net-rows">
-        <div class="net-row"><span class="muted small">Download</span><strong id="netRx">0 KB/s</strong></div>
-        <div class="net-row"><span class="muted small">Upload</span><strong id="netTx">0 KB/s</strong></div>
-      </div>
-    </div>
-
-    <div class="card disks-card">
-      <div class="card-header">
-        <h2>Disks</h2>
-      </div>
-      <div id="disksList" class="disks-list"></div>
-    </div>
-
-    <div class="card disks-card">
-      <div class="card-header">
-        <h2>Fans</h2>
-      </div>
-      <div id="fansList" class="disks-list"></div>
+      <div id="detailBody"></div>
     </div>
   </section>
 </main>

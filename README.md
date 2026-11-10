@@ -1,6 +1,8 @@
-# Server View
+# Web Task Manager
 
-A single-page, read-only server monitoring dashboard styled after Pterodactyl: CPU load, CPU temperature, RAM, swap, disks, network, and fan RPM (when the board/kernel exposes it), all reading straight from the motherboard's own sensors (`lm-sensors` / `/sys/class/hwmon` on Linux), refreshed every 2 seconds.
+A single-page, read-only server monitoring dashboard styled after the Windows Task Manager "Performance" tab: a resource list (CPU, Memory, Network, Uptime, each disk) on the left, each with a live thumbnail graph, and a big detail view on the right with a zoomable/pannable chart (scroll to zoom, drag to pan, double-click to reset) plus stats. CPU has an extra toggle for a per-logical-core grid, just like Task Manager's "Logical processors" view. All data is read straight from the OS (`lm-sensors` / `/sys/class/hwmon` on Linux for CPU temperature), refreshed every 2 seconds.
+
+Uptime gets its own long-term chart: samples are persisted in the browser (`localStorage`) once a minute so the trend survives page reloads, plotted against a fixed, deliberately huge 100,000-hour ceiling — it reads as a slowly climbing line that drops back to the bottom only on an actual restart.
 
 Signing in with Discord is required first — see **Discord login setup** below. This is meant to be run on a trusted local network only; login is an extra safety net, not a reason to expose it to the internet.
 
@@ -42,8 +44,6 @@ sudo modprobe nct6775
 echo nct6775 | sudo tee -a /etc/modules
 ```
 
-**Fan RPM depends entirely on your board/kernel.** Server View reads `/sys/class/hwmon/*/fan*_input` directly (the same data `lm-sensors` itself uses) — if that shows up under `sensors`/`lsmod`, it shows up on the dashboard automatically, with a real label (e.g. "CPU Fan") when the driver provides one. Some boards' Super I/O chip has no Linux driver at all yet, in which case no fan data exists to read and the Fans card just says so.
-
 ## Running natively (no Docker)
 
 ```bash
@@ -63,7 +63,7 @@ The dashboard will be available at `http://SERVER-IP:8642`.
 ```ini
 # /etc/systemd/system/server-view.service
 [Unit]
-Description=Server View dashboard
+Description=Web Task Manager dashboard
 After=network.target
 
 [Service]
@@ -87,7 +87,7 @@ sudo systemctl enable --now server-view
 docker compose up -d --build
 ```
 
-`/proc` and `/sys` are bind-mounted read-only so the Overview page reads the host's real CPU/RAM/temperature/fan data instead of the container's own isolated view, and `uts: host` makes it report the host's actual hostname instead of the container's auto-generated one. None of this requires `privileged` or `pid: host` — Server View doesn't run any commands against the host, it only reads already-exposed files.
+`/proc` and `/sys` are bind-mounted read-only so the dashboard reads the host's real CPU/RAM/temperature data instead of the container's own isolated view, and `uts: host` makes it report the host's actual hostname instead of the container's auto-generated one. None of this requires `privileged` or `pid: host` — it doesn't run any commands against the host, it only reads already-exposed files.
 
 `lm-sensors` must still be installed and configured on the host (see above) — the container only reads what the kernel already exposes under `/sys/class/hwmon`.
 
@@ -95,7 +95,6 @@ docker compose up -d --build
 
 - `server.js` — Express app + HTTP server (stats API, auth routes)
 - `lib/auth.js` — Discord OAuth2 code exchange, signed session cookies, the `requireAuth` gate
-- `lib/fans.js` — reads fan RPM + labels from `/sys/class/hwmon`
-- `public/` — static frontend (vanilla JS, Chart.js for sparklines)
+- `public/` — static frontend (vanilla JS, Chart.js + chartjs-plugin-zoom for the graphs)
 - `Dockerfile`, `docker-compose.yml` — containerization
 - `.env` (not committed — copy from `.env.example`) — Discord client ID/secret/redirect URI, allowed Discord user IDs, optional session secret

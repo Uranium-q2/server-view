@@ -7,7 +7,6 @@ const cookieParser = require('cookie-parser');
 const si = require('systeminformation');
 
 const auth = require('./lib/auth');
-const { readFans } = require('./lib/fans');
 
 const app = express();
 const PORT = process.env.PORT || 8642;
@@ -74,9 +73,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/stats', async (req, res) => {
   try {
-    const [cpuLoad, cpuTemp, mem, fsSize, time, netStats, osInfo, cpuInfo] = await Promise.all([
+    const [cpuLoad, cpuTemp, cpuSpeed, mem, fsSize, time, netStats, osInfo, cpuInfo] = await Promise.all([
       si.currentLoad(),
       si.cpuTemperature(),
+      si.cpuCurrentSpeed(),
       si.mem(),
       si.fsSize(),
       si.time(),
@@ -109,7 +109,9 @@ app.get('/api/stats', async (req, res) => {
         perCore: cpuLoad.cpus.map((c) => Math.round(c.load * 10) / 10),
         tempMain: cpuTemp.main,
         tempCores: cpuTemp.cores,
-        tempMax: cpuTemp.max
+        tempMax: cpuTemp.max,
+        speedGHz: cpuSpeed.avg,
+        baseSpeedGHz: cpuInfo.speed ? parseFloat(cpuInfo.speed) : null
       },
       mem: {
         total: mem.total,
@@ -125,8 +127,7 @@ app.get('/api/stats', async (req, res) => {
         iface: net.iface,
         rxSec: net.rx_sec || 0,
         txSec: net.tx_sec || 0
-      },
-      fans: readFans()
+      }
     });
   } catch (err) {
     console.error('Failed to read system stats:', err);
@@ -137,5 +138,5 @@ app.get('/api/stats', async (req, res) => {
 const server = http.createServer(app);
 
 server.listen(PORT, () => {
-  console.log(`Server View running at http://localhost:${PORT}`);
+  console.log(`Web Task Manager running at http://localhost:${PORT}`);
 });
