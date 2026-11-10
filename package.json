@@ -1,0 +1,14 @@
+{
+  "name": "server-view",
+  "version": "1.0.0",
+  "description": "Lekki dashboard monitorujacy CPU/RAM/dysk/siec/temperature serwera (Ubuntu), w stylu Pterodactyl.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "systeminformation": "^5.23.5"
+  }
+}

@@ -1,0 +1,15 @@
+services:
+  server-view:
+    build: .
+    container_name: server-view
+    restart: unless-stopped
+    ports:
+      - "8642:8642"
+    # Potrzebne, zeby kontener widzial realne dane hosta (CPU/RAM/temperatura),
+    # a nie tylko wlasny, odizolowany widok procesow.
+    pid: host
+    volumes:
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+    environment:
+      - NODE_ENV=production
