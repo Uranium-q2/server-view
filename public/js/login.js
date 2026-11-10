@@ -4,7 +4,7 @@ const discordBtn = document.getElementById('discordBtn');
 
 function returnToPath() {
   const params = new URLSearchParams(location.search);
-  return params.get('returnTo') || '/index.html';
+  return params.get('returnTo') || '/';
 }
 
 const urlError = new URLSearchParams(location.search).get('error');

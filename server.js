@@ -24,12 +24,12 @@ app.get('/auth/discord', (req, res) => {
   if (!auth.isConfigured()) {
     return res.status(500).send('Server is missing Discord OAuth settings in .env (see .env.example).');
   }
-  const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : '/index.html';
+  const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : '/';
   res.redirect(auth.buildAuthorizeUrl(returnTo));
 });
 
 app.get('/auth/discord/callback', async (req, res) => {
-  const returnTo = typeof req.query.state === 'string' ? req.query.state : '/index.html';
+  const returnTo = typeof req.query.state === 'string' ? req.query.state : '/';
 
   if (req.query.error) {
     return res.redirect(`/login.html?error=${encodeURIComponent('Discord sign-in was cancelled or denied.')}`);
@@ -67,7 +67,9 @@ app.get('/auth/me', (req, res) => {
 // Everything below this line requires a valid session.
 app.use(auth.requireAuth);
 
-app.get('/', (req, res) => res.redirect('/index.html'));
+// Canonical URL is "/" (served transparently via express.static's default
+// index.html); redirect the old explicit path to it instead of serving it.
+app.get('/index.html', (req, res) => res.redirect('/'));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
