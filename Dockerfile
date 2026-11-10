@@ -1,4 +1,7 @@
-FROM node:20-alpine
+# Debian-based (glibc), not alpine: the NVIDIA Container Toolkit injects
+# glibc nvidia-smi/libraries into the container for GPU monitoring, and
+# those don't run on alpine's musl libc.
+FROM node:20-bookworm-slim
 
 WORKDIR /app
 

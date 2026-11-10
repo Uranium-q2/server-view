@@ -91,6 +91,26 @@ docker compose up -d --build
 
 `lm-sensors` must still be installed and configured on the host (see above) — the container only reads what the kernel already exposes under `/sys/class/hwmon`.
 
+### GPU tab (NVIDIA)
+
+The GPU tab (temperature/load/VRAM) needs the host's NVIDIA GPU passed through to the container:
+
+```bash
+# on the Ubuntu Server host, with the NVIDIA driver already installed (nvidia-smi works)
+distribution=$(. /etc/os-release; echo $ID$VERSION_ID)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt update && sudo apt install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Then `docker compose up -d --build` as usual — `docker-compose.yml` already requests the GPU device. Without the driver + toolkit on the host, that request is simply ignored and the GPU tab stays hidden, same as before.
+
+AMD/Intel GPUs don't need any of this: their temperature is read straight from `/sys/class/hwmon` (already bind-mounted), no container toolkit involved.
+
 ## Project layout
 
 - `server.js` — Express app + HTTP server (stats API, auth routes)

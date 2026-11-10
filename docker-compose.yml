@@ -19,3 +19,16 @@ services:
       - .env
     environment:
       - NODE_ENV=production
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=utility
+    # Passes the host's NVIDIA GPU through for the GPU tab (temperature/load/
+    # VRAM via nvidia-smi). Requires the NVIDIA driver + NVIDIA Container
+    # Toolkit installed on the host (see README) - without them this block
+    # is simply ignored and the GPU tab stays hidden, same as before.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
