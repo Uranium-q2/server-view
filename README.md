@@ -1,12 +1,8 @@
 # Server View
 
-A lightweight server dashboard styled after Pterodactyl, with three pages:
+A single-page, read-only server monitoring dashboard styled after Pterodactyl: CPU load, CPU temperature, RAM, swap, disks, network, and fan RPM (when the board/kernel exposes it), all reading straight from the motherboard's own sensors (`lm-sensors` / `/sys/class/hwmon` on Linux), refreshed every 2 seconds.
 
-- **Overview** — CPU load, CPU temperature, RAM, swap, disks, network, all reading straight from the motherboard's own sensors (`lm-sensors` / `/sys/class/hwmon` on Linux), refreshed every 2 seconds.
-- **Docker Containers** — read-only status (running/partial/stopped) and a "View logs" button (`docker compose logs --tail=300`) for whatever Docker Compose projects you register in Settings. There is deliberately no start/stop/restart and no terminal — only ever read-only commands run against the host, to keep the attack surface small.
-- **Settings** — add/edit/delete managed containers: just a name and the project's location (folder on disk).
-
-Every page requires signing in with Discord first — see **Discord login setup** below. This is meant to be run on a trusted local network only; login is an extra safety net, not a reason to expose it to the internet.
+Signing in with Discord is required first — see **Discord login setup** below. This is meant to be run on a trusted local network only; login is an extra safety net, not a reason to expose it to the internet.
 
 ## Discord login setup
 
@@ -46,6 +42,8 @@ sudo modprobe nct6775
 echo nct6775 | sudo tee -a /etc/modules
 ```
 
+**Fan RPM depends entirely on your board/kernel.** Server View reads `/sys/class/hwmon/*/fan*_input` directly (the same data `lm-sensors` itself uses) — if that shows up under `sensors`/`lsmod`, it shows up on the dashboard automatically, with a real label (e.g. "CPU Fan") when the driver provides one. Some boards' Super I/O chip has no Linux driver at all yet, in which case no fan data exists to read and the Fans card just says so.
+
 ## Running natively (no Docker)
 
 ```bash
@@ -59,8 +57,6 @@ npm start
 ```
 
 The dashboard will be available at `http://SERVER-IP:8642`.
-
-Running natively, the Docker Containers status/logs commands run `cd <location> && docker compose ...` directly, so `location` must be a path that exists on this machine.
 
 ### As a systemd service (optional)
 
@@ -91,26 +87,15 @@ sudo systemctl enable --now server-view
 docker compose up -d --build
 ```
 
-The container runs with `privileged: true` and `pid: host`. This is required so that:
-
-- the Overview page can read the host's real CPU/RAM/temperature (via mounted `/proc` and `/sys`), and
-- the Docker Containers status/logs commands run **on the host itself** (not inside this container) by re-entering the host's namespaces with `nsenter` — otherwise they couldn't see your projects or your host's Docker daemon at all.
-
-**This still means the container has root-equivalent access to the host**, even though the only commands it ever runs are the fixed, read-only `docker compose ps` / `docker compose logs`. Only run it on a network you trust.
-
-> **Using rootless Docker?** The `nsenter` trick above does not work there: a rootless Docker daemon maps "root" inside the container to an unprivileged user on the host via a user namespace, so `privileged: true` does not grant it real host access, and `nsenter -t 1 ...` will fail with a permission error. Overview stats (read from mounted `/proc`, `/sys`) still work fine in that setup, but for Docker Containers status/logs to work, run Server View natively instead (see **Running natively** above) — it then talks to Docker directly, with no namespace tricks needed.
+`/proc` and `/sys` are bind-mounted read-only so the Overview page reads the host's real CPU/RAM/temperature/fan data instead of the container's own isolated view, and `uts: host` makes it report the host's actual hostname instead of the container's auto-generated one. None of this requires `privileged` or `pid: host` — Server View doesn't run any commands against the host, it only reads already-exposed files.
 
 `lm-sensors` must still be installed and configured on the host (see above) — the container only reads what the kernel already exposes under `/sys/class/hwmon`.
 
-Container settings (the list configured on the Settings page) are persisted in `./data/containers.json`, which is bind-mounted into the container so it survives rebuilds.
-
 ## Project layout
 
-- `server.js` — Express app + HTTP server (stats API, container CRUD, logs action, auth routes)
+- `server.js` — Express app + HTTP server (stats API, auth routes)
 - `lib/auth.js` — Discord OAuth2 code exchange, signed session cookies, the `requireAuth` gate
-- `lib/containers-store.js` — reads/writes `data/containers.json`
-- `lib/docker-actions.js` — runs the fixed, read-only `docker compose ps` / `docker compose logs` commands and streams output over SSE
-- `lib/host-exec.js` — the `nsenter` host-escape logic used when running inside Docker
+- `lib/fans.js` — reads fan RPM + labels from `/sys/class/hwmon`
 - `public/` — static frontend (vanilla JS, Chart.js for sparklines)
 - `Dockerfile`, `docker-compose.yml` — containerization
 - `.env` (not committed — copy from `.env.example`) — Discord client ID/secret/redirect URI, allowed Discord user IDs, optional session secret
