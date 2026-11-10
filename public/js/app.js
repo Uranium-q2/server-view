@@ -148,7 +148,6 @@ function makeDetailChart(canvas, datasets, { yMin = 0, yMax = 100, xLabels = nul
 
 // ---------- Resource list + detail selection ----------
 
-const RESOURCE_ORDER = ['cpu', 'memory', 'network', 'uptime'];
 let knownDiskMounts = [];
 const thumbnails = {}; // key -> Chart instance
 let mainChart = null;
@@ -197,6 +196,7 @@ function selectKey(key) {
   document.querySelectorAll('.tm-row').forEach((el) => {
     el.classList.toggle('active', el.dataset.key === key);
   });
+  detailStructureSig = null; // force a structure rebuild for the newly selected resource
   renderDetail();
 }
 
@@ -210,9 +210,15 @@ function statRow(label, value) {
   return `<div class="stat-item"><span class="muted small">${label}</span><strong>${value}</strong></div>`;
 }
 
-function renderDetail() {
-  if (!lastStats) return;
-  const s = lastStats;
+// Only rebuilds the DOM + creates fresh Chart.js instances when the
+// selected resource (or CPU's overview/per-core toggle) actually changes.
+// Recreating the chart on every poll would also wipe out any zoom/pan the
+// user had just done, since chartjs-plugin-zoom's state lives on the chart
+// instance - so this must NOT run on every tick, only on a real selection
+// change (see updateDetailData() for the per-tick data refresh).
+let detailStructureSig = null;
+
+function buildDetailStructure() {
   const title = document.getElementById('detailTitle');
   const actions = document.getElementById('detailActions');
   const body = document.getElementById('detailBody');
@@ -226,8 +232,8 @@ function renderDetail() {
       <button class="btn btn-toggle ${!cpuPerCoreView ? 'active' : ''}" id="btnOverview">Overview</button>
       <button class="btn btn-toggle ${cpuPerCoreView ? 'active' : ''}" id="btnPerCore">Per core</button>
     `;
-    document.getElementById('btnOverview').addEventListener('click', () => { cpuPerCoreView = false; renderDetail(); });
-    document.getElementById('btnPerCore').addEventListener('click', () => { cpuPerCoreView = true; renderDetail(); });
+    document.getElementById('btnOverview').addEventListener('click', () => { cpuPerCoreView = false; detailStructureSig = null; renderDetail(); });
+    document.getElementById('btnPerCore').addEventListener('click', () => { cpuPerCoreView = true; detailStructureSig = null; renderDetail(); });
 
     if (cpuPerCoreView) {
       body.innerHTML = `<div class="core-grid" id="coreGrid"></div>`;
@@ -243,45 +249,20 @@ function renderDetail() {
         perCoreCharts.push(chart);
       });
     } else {
-      body.innerHTML = `
-        <canvas id="mainChart" class="main-chart"></canvas>
-        <div class="stat-grid">
-          ${statRow('Utilization', `${s.cpu.loadPercent}%`)}
-          ${statRow('Speed', s.cpu.speedGHz ? `${s.cpu.speedGHz.toFixed(2)} GHz` : 'n/a')}
-          ${statRow('Base speed', s.cpu.baseSpeedGHz ? `${s.cpu.baseSpeedGHz.toFixed(2)} GHz` : 'n/a')}
-          ${statRow('Cores', s.cpu.cores)}
-          ${statRow('Logical processors', s.cpu.threads)}
-          ${statRow('Temperature', s.cpu.tempMain && s.cpu.tempMain > 0 ? `${s.cpu.tempMain.toFixed(1)}°C` : 'n/a')}
-        </div>
-      `;
+      body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
       mainChart = makeDetailChart(document.getElementById('mainChart'), [
         { label: 'CPU %', data: history.cpu.slice(), color: '#3b82f6' }
       ], { yMin: 0, yMax: 100 });
     }
   } else if (selectedKey === 'memory') {
     title.textContent = 'Memory';
-    body.innerHTML = `
-      <canvas id="mainChart" class="main-chart"></canvas>
-      <div class="stat-grid">
-        ${statRow('In use', `${fmtBytes(s.mem.used)} (${s.mem.usePercent}%)`)}
-        ${statRow('Available', fmtBytes(s.mem.free))}
-        ${statRow('Total', fmtBytes(s.mem.total))}
-        ${statRow('Swap', s.mem.swapTotal > 0 ? `${fmtBytes(s.mem.swapUsed)} / ${fmtBytes(s.mem.swapTotal)}` : 'no swap')}
-      </div>
-    `;
+    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Memory %', data: history.mem.slice(), color: '#e2a93b' }
     ], { yMin: 0, yMax: 100 });
   } else if (selectedKey === 'network') {
     title.textContent = 'Network';
-    body.innerHTML = `
-      <canvas id="mainChart" class="main-chart"></canvas>
-      <div class="stat-grid">
-        ${statRow('Interface', s.network.iface || 'n/a')}
-        ${statRow('Download', fmtRate(s.network.rxSec))}
-        ${statRow('Upload', fmtRate(s.network.txSec))}
-      </div>
-    `;
+    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
     const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean));
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Download B/s', data: history.netRx.slice(), color: '#3bc17a' },
@@ -289,30 +270,15 @@ function renderDetail() {
     ], { yMin: 0, yMax: maxRate * 1.2 });
   } else if (selectedKey === 'uptime') {
     title.textContent = 'Uptime';
-    const startedAt = new Date(Date.now() - s.uptime * 1000);
-    body.innerHTML = `
-      <canvas id="mainChart" class="main-chart"></canvas>
-      <div class="stat-grid">
-        ${statRow('Current uptime', fmtUptime(s.uptime))}
-        ${statRow('Running since', startedAt.toLocaleString())}
-        ${statRow('Chart ceiling', `${UPTIME_Y_MAX_HOURS.toLocaleString()} h`)}
-      </div>
-    `;
+    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
     const points = uptimeHistory.map((p) => p.h);
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Uptime (hours)', data: points, color: '#8b5cf6' }
     ], { yMin: 0, yMax: UPTIME_Y_MAX_HOURS });
   } else if (selectedKey.startsWith('disk:')) {
     const mount = selectedKey.slice(5);
-    const disk = s.disks.find((d) => d.mount === mount);
     title.textContent = `Disk (${mount})`;
-    body.innerHTML = `
-      <canvas id="mainChart" class="main-chart"></canvas>
-      <div class="stat-grid">
-        ${statRow('Used', disk ? `${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}` : 'n/a')}
-        ${statRow('Usage', disk ? `${disk.usePercent}%` : 'n/a')}
-      </div>
-    `;
+    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Usage %', data: (history.disks[mount] || []).slice(), color: '#e2503b' }
     ], { yMin: 0, yMax: 100 });
@@ -322,6 +288,92 @@ function renderDetail() {
     const canvas = document.getElementById('mainChart');
     canvas.ondblclick = () => mainChart.resetZoom();
   }
+}
+
+// Pushes fresh data/stats into the already-built chart instances, every
+// tick, without touching the chart objects themselves (preserves zoom/pan).
+function updateDetailData() {
+  if (!lastStats) return;
+  const s = lastStats;
+  const statGrid = document.getElementById('statGrid');
+
+  if (selectedKey === 'cpu') {
+    if (cpuPerCoreView) {
+      perCoreCharts.forEach((chart, i) => {
+        chart.data.datasets[0].data = (history.perCore[i] || []).slice();
+        chart.update('none');
+      });
+    } else if (mainChart) {
+      mainChart.data.datasets[0].data = history.cpu.slice();
+      mainChart.update('none');
+      if (statGrid) {
+        statGrid.innerHTML = [
+          statRow('Utilization', `${s.cpu.loadPercent}%`),
+          statRow('Speed', s.cpu.speedGHz ? `${s.cpu.speedGHz.toFixed(2)} GHz` : 'n/a'),
+          statRow('Base speed', s.cpu.baseSpeedGHz ? `${s.cpu.baseSpeedGHz.toFixed(2)} GHz` : 'n/a'),
+          statRow('Cores', s.cpu.cores),
+          statRow('Logical processors', s.cpu.threads),
+          statRow('Temperature', s.cpu.tempMain && s.cpu.tempMain > 0 ? `${s.cpu.tempMain.toFixed(1)}°C` : 'n/a')
+        ].join('');
+      }
+    }
+  } else if (selectedKey === 'memory' && mainChart) {
+    mainChart.data.datasets[0].data = history.mem.slice();
+    mainChart.update('none');
+    if (statGrid) {
+      statGrid.innerHTML = [
+        statRow('In use', `${fmtBytes(s.mem.used)} (${s.mem.usePercent}%)`),
+        statRow('Available', fmtBytes(s.mem.free)),
+        statRow('Total', fmtBytes(s.mem.total)),
+        statRow('Swap', s.mem.swapTotal > 0 ? `${fmtBytes(s.mem.swapUsed)} / ${fmtBytes(s.mem.swapTotal)}` : 'no swap')
+      ].join('');
+    }
+  } else if (selectedKey === 'network' && mainChart) {
+    mainChart.data.datasets[0].data = history.netRx.slice();
+    mainChart.data.datasets[1].data = history.netTx.slice();
+    const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean));
+    mainChart.options.scales.y.max = maxRate * 1.2;
+    mainChart.update('none');
+    if (statGrid) {
+      statGrid.innerHTML = [
+        statRow('Interface', s.network.iface || 'n/a'),
+        statRow('Download', fmtRate(s.network.rxSec)),
+        statRow('Upload', fmtRate(s.network.txSec))
+      ].join('');
+    }
+  } else if (selectedKey === 'uptime' && mainChart) {
+    mainChart.data.datasets[0].data = uptimeHistory.map((p) => p.h);
+    mainChart.update('none');
+    if (statGrid) {
+      const startedAt = new Date(Date.now() - s.uptime * 1000);
+      statGrid.innerHTML = [
+        statRow('Current uptime', fmtUptime(s.uptime)),
+        statRow('Running since', startedAt.toLocaleString()),
+        statRow('Chart ceiling', `${UPTIME_Y_MAX_HOURS.toLocaleString()} h`)
+      ].join('');
+    }
+  } else if (selectedKey.startsWith('disk:') && mainChart) {
+    const mount = selectedKey.slice(5);
+    const disk = s.disks.find((d) => d.mount === mount);
+    mainChart.data.datasets[0].data = (history.disks[mount] || []).slice();
+    mainChart.update('none');
+    if (statGrid) {
+      statGrid.innerHTML = [
+        statRow('Used', disk ? `${fmtBytes(disk.used)} / ${fmtBytes(disk.size)}` : 'n/a'),
+        statRow('Usage', disk ? `${disk.usePercent}%` : 'n/a')
+      ].join('');
+    }
+  }
+}
+
+function renderDetail() {
+  if (!lastStats) return;
+  const sig = `${selectedKey}:${cpuPerCoreView}`;
+  if (sig !== detailStructureSig) {
+    buildDetailStructure();
+    detailStructureSig = sig;
+  }
+  updateDetailData();
 }
 
 // ---------- Poll loop ----------
