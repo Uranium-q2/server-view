@@ -249,20 +249,20 @@ function buildDetailStructure() {
         perCoreCharts.push(chart);
       });
     } else {
-      body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
+      body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
       mainChart = makeDetailChart(document.getElementById('mainChart'), [
         { label: 'CPU %', data: history.cpu.slice(), color: '#3b82f6' }
       ], { yMin: 0, yMax: 100 });
     }
   } else if (selectedKey === 'memory') {
     title.textContent = 'Memory';
-    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
+    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Memory %', data: history.mem.slice(), color: '#e2a93b' }
     ], { yMin: 0, yMax: 100 });
   } else if (selectedKey === 'network') {
     title.textContent = 'Network';
-    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
+    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean));
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Download B/s', data: history.netRx.slice(), color: '#3bc17a' },
@@ -270,7 +270,7 @@ function buildDetailStructure() {
     ], { yMin: 0, yMax: maxRate * 1.2 });
   } else if (selectedKey === 'uptime') {
     title.textContent = 'Uptime';
-    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
+    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     const points = uptimeHistory.map((p) => p.h);
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Uptime (hours)', data: points, color: '#8b5cf6' }
@@ -278,7 +278,7 @@ function buildDetailStructure() {
   } else if (selectedKey.startsWith('disk:')) {
     const mount = selectedKey.slice(5);
     title.textContent = `Disk (${mount})`;
-    body.innerHTML = `<canvas id="mainChart" class="main-chart"></canvas><div class="stat-grid" id="statGrid"></div>`;
+    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Usage %', data: (history.disks[mount] || []).slice(), color: '#e2503b' }
     ], { yMin: 0, yMax: 100 });

@@ -213,7 +213,8 @@ body {
   color: #fff;
 }
 
-.main-chart {
+.main-chart-wrap {
+  position: relative;
   width: 100%;
   height: 340px;
 }

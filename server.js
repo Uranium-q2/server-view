@@ -67,6 +67,8 @@ app.get('/auth/me', (req, res) => {
 // Everything below this line requires a valid session.
 app.use(auth.requireAuth);
 
+app.get('/', (req, res) => res.redirect('/index.html'));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- System stats ----------
