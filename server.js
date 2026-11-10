@@ -1,16 +1,62 @@
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
 const http = require('http');
+const cookieParser = require('cookie-parser');
 const si = require('systeminformation');
 
 const store = require('./lib/containers-store');
 const dockerActions = require('./lib/docker-actions');
-const { attachTerminal } = require('./lib/terminal');
+const auth = require('./lib/auth');
 
 const app = express();
 const PORT = process.env.PORT || 8642;
 
 app.use(express.json());
+app.use(cookieParser());
+
+// ---------- Auth (Google Sign-In) ----------
+
+app.get('/auth/config', (req, res) => {
+  res.json({ clientId: auth.CLIENT_ID, configured: auth.isConfigured() });
+});
+
+app.post('/auth/google', async (req, res) => {
+  if (!auth.isConfigured()) {
+    return res.status(500).json({ error: 'Server is missing GOOGLE_CLIENT_ID / ALLOWED_EMAILS in .env' });
+  }
+  try {
+    const payload = await auth.verifyGoogleToken(req.body.credential);
+    if (!payload.email_verified || !auth.isAllowedEmail(payload.email)) {
+      return res.status(403).json({ error: `Access denied for ${payload.email}` });
+    }
+    const cookieValue = auth.createSessionCookie(payload);
+    res.cookie(auth.COOKIE_NAME, cookieValue, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+    res.json({ ok: true, email: payload.email, name: payload.name });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid Google token', details: String(err.message || err) });
+  }
+});
+
+app.post('/auth/logout', (req, res) => {
+  res.clearCookie(auth.COOKIE_NAME);
+  res.json({ ok: true });
+});
+
+app.get('/auth/me', (req, res) => {
+  const session = auth.getSessionFromRequest(req);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+  res.json({ email: session.email, name: session.name });
+});
+
+// Everything below this line requires a valid session.
+app.use(auth.requireAuth);
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- System stats ----------
@@ -109,21 +155,14 @@ app.get('/api/containers/:id/status', async (req, res) => {
   res.json(await dockerActions.getContainerStatus(container));
 });
 
-// ---------- Docker containers: actions (start/stop/restart) ----------
+// ---------- Docker containers: logs (read-only) ----------
 
-app.post('/api/containers/:id/:action', (req, res) => {
-  const { id, action } = req.params;
-  if (!['start', 'stop', 'restart'].includes(action)) {
-    return res.status(400).json({ error: 'Unknown action' });
-  }
-  const container = store.get(id);
+app.post('/api/containers/:id/logs', (req, res) => {
+  const container = store.get(req.params.id);
   if (!container) return res.status(404).json({ error: 'Container not found' });
-  if (container.enabled && container.enabled[action] === false) {
-    return res.status(403).json({ error: `Action "${action}" is disabled for this container` });
-  }
 
   try {
-    const actionId = dockerActions.startAction(container, action);
+    const actionId = dockerActions.startLogsAction(container);
     res.json({ actionId });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
@@ -165,7 +204,6 @@ app.get('/api/actions/:actionId/stream', (req, res) => {
 });
 
 const server = http.createServer(app);
-attachTerminal(server);
 
 server.listen(PORT, () => {
   console.log(`Server View running at http://localhost:${PORT}`);

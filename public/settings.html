@@ -16,7 +16,6 @@
     <nav class="sidebar-nav">
       <a class="nav-item" href="index.html"><span class="dot"></span>Overview</a>
       <a class="nav-item" href="containers.html"><span class="dot"></span>Docker Containers</a>
-      <a class="nav-item" href="terminal.html"><span class="dot"></span>Terminal</a>
       <a class="nav-item active" href="settings.html"><span class="dot"></span>Settings</a>
     </nav>
 
@@ -28,6 +27,10 @@
     </div>
 
     <div class="sidebar-footer">
+      <div class="user-box">
+        <span class="email muted" id="userEmail">—</span>
+        <button class="btn-icon" id="logoutBtn" title="Log out">&#9211;</button>
+      </div>
       <div class="status-pill" id="connStatus"><span class="status-dot online"></span>Online</div>
     </div>
   </aside>
@@ -36,7 +39,7 @@
     <header class="topbar">
       <div>
         <h1>Settings</h1>
-        <p class="muted">Add and configure the Docker Compose projects shown on the Docker Containers page.</p>
+        <p class="muted">Add the Docker Compose projects you want to see status and logs for on the Docker Containers page.</p>
       </div>
     </header>
 
@@ -52,24 +55,6 @@
         <label>Container location
           <input type="text" id="fieldLocation" placeholder="e.g. /home/user/piano-transcription-server" required />
         </label>
-
-        <div class="form-grid">
-          <label>Start command
-            <input type="text" id="cmdStart" placeholder="docker compose up -d --build" />
-          </label>
-          <label>Stop command
-            <input type="text" id="cmdStop" placeholder="docker compose down" />
-          </label>
-          <label>Restart command
-            <input type="text" id="cmdRestart" placeholder="docker compose restart" />
-          </label>
-        </div>
-
-        <div class="form-grid toggles">
-          <label class="toggle"><input type="checkbox" id="enStart" checked /> Enable Start button</label>
-          <label class="toggle"><input type="checkbox" id="enStop" checked /> Enable Stop button</label>
-          <label class="toggle"><input type="checkbox" id="enRestart" checked /> Enable Restart button</label>
-        </div>
 
         <div class="form-actions">
           <button type="submit" class="btn btn-start" id="submitBtn">Add container</button>

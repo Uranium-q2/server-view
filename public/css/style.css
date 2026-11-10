@@ -389,23 +389,6 @@ body {
   font-size: 14px;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0 16px;
-}
-
-.toggles {
-  margin: 4px 0 18px;
-}
-
-.toggle {
-  flex-direction: row !important;
-  align-items: center;
-  gap: 8px !important;
-  color: var(--text) !important;
-}
-
 .form-actions {
   display: flex;
   gap: 10px;
@@ -428,14 +411,49 @@ body {
   gap: 8px;
 }
 
-/* ---------- Terminal page ---------- */
+/* ---------- Login page ---------- */
 
-.terminal-card {
-  padding: 10px;
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
 }
 
-#terminal {
-  height: 65vh;
+.login-card {
+  width: min(360px, 90vw);
+  text-align: center;
+  padding: 32px 28px;
+}
+
+.login-brand {
+  justify-content: center;
+  padding: 0 0 18px;
+  font-size: 18px;
+}
+
+.google-btn-slot {
+  display: flex;
+  justify-content: center;
+  margin: 18px 0 10px;
+}
+
+/* ---------- Sidebar user box ---------- */
+
+.user-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.user-box .email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 720px) {

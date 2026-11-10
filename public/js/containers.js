@@ -37,24 +37,21 @@ function renderContainers(containers) {
     const card = document.createElement('div');
     card.className = 'card container-card';
 
-    const buttons = ['start', 'stop', 'restart']
-      .filter((action) => !c.enabled || c.enabled[action] !== false)
-      .map((action) => `<button class="btn btn-${action}" data-id="${c.id}" data-action="${action}">${action[0].toUpperCase()}${action.slice(1)}</button>`)
-      .join('');
-
     card.innerHTML = `
       <div class="card-header">
         <h2>${c.name}</h2>
         ${statusBadge(c.status ? c.status.state : 'unknown')}
       </div>
       <p class="muted small location">${c.location || '(no location set)'}</p>
-      <div class="container-actions">${buttons || '<span class="muted small">All actions disabled</span>'}</div>
+      <div class="container-actions">
+        <button class="btn btn-restart" data-id="${c.id}">View logs</button>
+      </div>
     `;
     listEl.appendChild(card);
   });
 
-  listEl.querySelectorAll('button[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => runAction(btn.dataset.id, btn.dataset.action, btn));
+  listEl.querySelectorAll('button[data-id]').forEach((btn) => {
+    btn.addEventListener('click', () => viewLogs(btn.dataset.id, btn));
   });
 }
 
@@ -68,22 +65,21 @@ async function loadContainers() {
   }
 }
 
-async function runAction(id, action, btn) {
+async function viewLogs(id, btn) {
   btn.disabled = true;
   try {
-    const res = await fetch(`/api/containers/${id}/${action}`, { method: 'POST' });
+    const res = await fetch(`/api/containers/${id}/logs`, { method: 'POST' });
     const data = await res.json();
     if (!res.ok) {
-      alert(data.error || 'Action failed');
+      alert(data.error || 'Could not fetch logs');
       btn.disabled = false;
       return;
     }
-    openConsole(`${action[0].toUpperCase()}${action.slice(1)} — ${btn.closest('.card').querySelector('h2').textContent}`, data.actionId, () => {
+    openConsole(`Logs — ${btn.closest('.card').querySelector('h2').textContent}`, data.actionId, () => {
       btn.disabled = false;
-      loadContainers();
     });
   } catch (err) {
-    alert('Action failed to start.');
+    alert('Could not fetch logs.');
     btn.disabled = false;
   }
 }
@@ -101,9 +97,7 @@ function openConsole(title, actionId, onDone) {
     consoleOutput.textContent += JSON.parse(ev.data);
     consoleOutput.scrollTop = consoleOutput.scrollHeight;
   });
-  es.addEventListener('exit', (ev) => {
-    const { exitCode } = JSON.parse(ev.data);
-    consoleOutput.textContent += `\n[finished, exit code ${exitCode}]\n`;
+  es.addEventListener('exit', () => {
     es.close();
     if (onDone) onDone();
   });

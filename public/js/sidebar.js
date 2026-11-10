@@ -14,6 +14,10 @@
   async function tick() {
     try {
       const res = await fetch('/api/stats');
+      if (res.status === 401) {
+        location.href = `/login.html?returnTo=${encodeURIComponent(location.pathname)}`;
+        return;
+      }
       if (!res.ok) throw new Error('bad response');
       const s = await res.json();
 
@@ -35,6 +39,27 @@
     }
   }
 
+  async function loadUser() {
+    try {
+      const res = await fetch('/auth/me');
+      if (!res.ok) return;
+      const user = await res.json();
+      const el = document.getElementById('userEmail');
+      if (el) el.textContent = user.email;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', async () => {
+      await fetch('/auth/logout', { method: 'POST' });
+      location.href = '/login.html';
+    });
+  }
+
+  loadUser();
   tick();
   setInterval(tick, 3000);
 })();
