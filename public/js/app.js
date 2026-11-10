@@ -46,7 +46,9 @@ const history = {
   netRx: Array(BUFFER_LEN).fill(null),
   netTx: Array(BUFFER_LEN).fill(null),
   perCore: [], // array of arrays, one per logical core
-  disks: {} // mount -> array
+  disks: {}, // mount -> array
+  gpuTemp: Array(BUFFER_LEN).fill(null),
+  gpuLoad: Array(BUFFER_LEN).fill(null)
 };
 
 function pushRolling(arr, value) {
@@ -160,6 +162,8 @@ function makeDetailChart(canvas, datasets, { yMin = 0, yMax = 100, xLabels = nul
 // ---------- Resource list + detail selection ----------
 
 let knownDiskMounts = [];
+let knownHasGpu = false;
+const NO_CHART_KEYS = new Set(['processes']);
 const thumbnails = {}; // key -> Chart instance
 let mainChart = null;
 let perCoreCharts = [];
@@ -176,18 +180,23 @@ function buildList() {
 
   const rows = [
     { key: 'cpu', label: 'CPU', color: '#3b82f6', yMax: 100 },
+    ...(knownHasGpu ? [{ key: 'gpu', label: 'GPU', color: '#22c1c3', yMax: 100 }] : []),
     { key: 'memory', label: 'Memory', color: '#e2a93b', yMax: 100 },
     { key: 'network', label: 'Network', color: '#3bc17a', yMax: netThumbMax },
     { key: 'uptime', label: 'Uptime', color: '#8b5cf6', yMax: UPTIME_Y_MAX_HOURS },
-    ...knownDiskMounts.map((mount) => ({ key: `disk:${mount}`, label: `Disk (${mount})`, color: '#e2503b', yMax: 100 }))
+    ...knownDiskMounts.map((mount) => ({ key: `disk:${mount}`, label: `Disk (${mount})`, color: '#e2503b', yMax: 100 })),
+    { key: 'processes', label: 'Processes', color: '#f472b6', yMax: 100 }
   ];
 
   rows.forEach((row) => {
     const el = document.createElement('div');
     el.className = 'tm-row' + (row.key === selectedKey ? ' active' : '');
     el.dataset.key = row.key;
+    const thumbInner = NO_CHART_KEYS.has(row.key)
+      ? `<div class="tm-thumb-live">LIVE</div>`
+      : `<canvas id="thumb-${sanitizeKey(row.key)}"></canvas>`;
     el.innerHTML = `
-      <div class="tm-thumb-wrap"><canvas id="thumb-${sanitizeKey(row.key)}"></canvas></div>
+      <div class="tm-thumb-wrap">${thumbInner}</div>
       <div class="tm-row-label">
         <strong>${row.label}</strong>
         <span class="muted small" id="rowsub-${sanitizeKey(row.key)}">—</span>
@@ -196,8 +205,10 @@ function buildList() {
     el.addEventListener('click', () => selectKey(row.key));
     listEl.appendChild(el);
 
-    const canvas = el.querySelector('canvas');
-    thumbnails[row.key] = makeThumbnail(canvas, row.color, row.yMax);
+    if (!NO_CHART_KEYS.has(row.key)) {
+      const canvas = el.querySelector('canvas');
+      thumbnails[row.key] = makeThumbnail(canvas, row.color, row.yMax);
+    }
   });
 }
 
@@ -330,6 +341,25 @@ function buildDetailStructure() {
       ], { yMin: 0, yMax: 100 });
       attachScaleToolbar(100);
     }
+  } else if (selectedKey === 'gpu') {
+    title.textContent = 'GPU';
+    yMaxManual = false;
+    body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+    mainChart = makeDetailChart(document.getElementById('mainChart'), [
+      { label: 'Temperature °C', data: history.gpuTemp.slice(), color: '#22c1c3' }
+    ], { yMin: 0, yMax: 100 });
+    attachScaleToolbar(100);
+  } else if (selectedKey === 'processes') {
+    title.textContent = 'Processes';
+    body.innerHTML = `
+      <div class="proc-table-wrap">
+        <table class="proc-table">
+          <thead><tr><th>PID</th><th>Name</th><th class="num">CPU %</th><th class="num">Mem %</th></tr></thead>
+          <tbody id="procBody"></tbody>
+        </table>
+      </div>
+      <div class="stat-grid" id="statGrid"></div>
+    `;
   } else if (selectedKey === 'memory') {
     title.textContent = 'Memory';
     yMaxManual = false;
@@ -400,6 +430,42 @@ function updateDetailData() {
           statRow('Temperature', s.cpu.tempMain && s.cpu.tempMain > 0 ? `${s.cpu.tempMain.toFixed(1)}°C` : 'n/a')
         ].join('');
       }
+    }
+  } else if (selectedKey === 'gpu' && mainChart) {
+    mainChart.data.datasets[0].data = history.gpuTemp.slice();
+    mainChart.update('none');
+    if (statGrid) {
+      const g = s.gpu || {};
+      statGrid.innerHTML = [
+        statRow('Vendor', g.vendor || 'n/a'),
+        statRow('Model', g.model || 'n/a'),
+        statRow('Temperature', g.tempC != null ? `${g.tempC.toFixed(1)}°C` : 'n/a'),
+        statRow('Load', g.loadPercent != null ? `${g.loadPercent}%` : 'n/a'),
+        statRow('VRAM', g.memTotalMB != null ? `${fmtBytes((g.memUsedMB || 0) * 1024 * 1024)} / ${fmtBytes(g.memTotalMB * 1024 * 1024)}` : 'n/a'),
+        statRow('Fan', g.fanPercent != null ? `${g.fanPercent}%` : 'n/a')
+      ].join('');
+    }
+  } else if (selectedKey === 'processes') {
+    const body = document.getElementById('procBody');
+    const list = s.processes && s.processes.list ? s.processes.list : [];
+    if (body) {
+      body.innerHTML = list.map((p) => `
+        <tr>
+          <td>${p.pid}</td>
+          <td>${p.name}</td>
+          <td class="num">${p.cpu.toFixed(1)}</td>
+          <td class="num">${p.mem.toFixed(1)}</td>
+        </tr>
+      `).join('');
+    }
+    if (statGrid) {
+      const sum = s.processes || { all: 0, running: 0, sleeping: 0, blocked: 0 };
+      statGrid.innerHTML = [
+        statRow('Total processes', sum.all),
+        statRow('Running', sum.running),
+        statRow('Sleeping', sum.sleeping),
+        statRow('Blocked', sum.blocked)
+      ].join('');
     }
   } else if (selectedKey === 'memory' && mainChart) {
     mainChart.data.datasets[0].data = history.mem.slice();
@@ -481,8 +547,11 @@ async function tick() {
 
     const mounts = s.disks.map((d) => d.mount);
     const mountsChanged = mounts.length !== knownDiskMounts.length || mounts.some((m, i) => m !== knownDiskMounts[i]);
-    if (mountsChanged) {
+    const hasGpu = !!s.gpu;
+    const gpuChanged = hasGpu !== knownHasGpu;
+    if (mountsChanged || gpuChanged) {
       knownDiskMounts = mounts;
+      knownHasGpu = hasGpu;
       mounts.forEach((m) => { if (!history.disks[m]) history.disks[m] = Array(BUFFER_LEN).fill(null); });
       buildList();
     }
@@ -497,6 +566,8 @@ async function tick() {
     pushRolling(history.netTx, s.network.txSec);
     s.cpu.perCore.forEach((v, i) => pushRolling(history.perCore[i], v));
     mounts.forEach((m, i) => pushRolling(history.disks[m], s.disks[i].usePercent));
+    pushRolling(history.gpuTemp, s.gpu && s.gpu.tempC != null ? s.gpu.tempC : null);
+    pushRolling(history.gpuLoad, s.gpu && s.gpu.loadPercent != null ? s.gpu.loadPercent : null);
     recordUptimeSample(s.uptime);
 
     // Update thumbnails
@@ -518,6 +589,10 @@ async function tick() {
         thumbnails[key].update('none');
       }
     });
+    if (thumbnails.gpu) {
+      thumbnails.gpu.data.datasets[0].data = history.gpuTemp.slice();
+      thumbnails.gpu.update('none');
+    }
 
     const setSub = (id, text) => {
       const el = document.getElementById(id);
@@ -528,6 +603,8 @@ async function tick() {
     setSub('rowsub-network', `↓ ${fmtRate(s.network.rxSec)} ↑ ${fmtRate(s.network.txSec)}`);
     setSub('rowsub-uptime', fmtUptime(s.uptime));
     s.disks.forEach((d) => setSub(`rowsub-${sanitizeKey(`disk:${d.mount}`)}`, `${d.usePercent}%`));
+    if (s.gpu) setSub('rowsub-gpu', s.gpu.tempC != null ? `${s.gpu.tempC.toFixed(0)}°C` : s.gpu.model);
+    if (s.processes) setSub('rowsub-processes', `${s.processes.all} procs`);
 
     renderDetail();
   } catch (err) {

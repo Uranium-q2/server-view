@@ -77,7 +77,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/api/stats', async (req, res) => {
   try {
-    const [cpuLoad, cpuTemp, cpuSpeed, mem, fsSize, time, netStats, osInfo, cpuInfo] = await Promise.all([
+    const [cpuLoad, cpuTemp, cpuSpeed, mem, fsSize, time, netStats, osInfo, cpuInfo, graphics, processes] = await Promise.all([
       si.currentLoad(),
       si.cpuTemperature(),
       si.cpuCurrentSpeed(),
@@ -86,17 +86,66 @@ app.get('/api/stats', async (req, res) => {
       si.time(),
       si.networkStats(),
       si.osInfo(),
-      si.cpu()
+      si.cpu(),
+      si.graphics().catch(() => null),
+      si.processes().catch(() => null)
     ]);
 
-    const disks = fsSize
-      .filter((d) => d.size > 0)
-      .map((d) => ({
-        mount: d.mount,
-        used: d.used,
-        size: d.size,
-        usePercent: Math.round(d.use * 10) / 10
-      }));
+    const candidateDisks = fsSize.filter((d) => d.size > 0);
+    // Only the single disk the OS itself is installed on - not every
+    // overlay/bind-mount fstab entry (Docker overlayfs, /proc, /sys bind
+    // mounts, etc. all report size > 0 and would otherwise flood the list).
+    const mainDisk =
+      candidateDisks.find((d) => d.mount === '/' || /^[A-Z]:\\?$/i.test(d.mount)) ||
+      candidateDisks.slice().sort((a, b) => b.size - a.size)[0];
+
+    const disks = mainDisk
+      ? [{
+          mount: mainDisk.mount,
+          used: mainDisk.used,
+          size: mainDisk.size,
+          usePercent: Math.round(mainDisk.use * 10) / 10
+        }]
+      : [];
+
+    // Prefer a controller that actually reports live metrics (the real GPU)
+    // over virtual/meta display adapters, which also have a vendor/model
+    // but never report temperature or load.
+    const gpuController = graphics && graphics.controllers
+      ? graphics.controllers.find((c) => typeof c.temperatureGpu === 'number') ||
+        graphics.controllers.find((c) => typeof c.memoryTotal === 'number') ||
+        graphics.controllers.find((c) => c.vendor && !/meta/i.test(c.vendor)) ||
+        null
+      : null;
+
+    const gpu = gpuController
+      ? {
+          vendor: gpuController.vendor || 'Unknown',
+          model: gpuController.model || 'GPU',
+          tempC: typeof gpuController.temperatureGpu === 'number' ? gpuController.temperatureGpu : null,
+          loadPercent: typeof gpuController.utilizationGpu === 'number' ? gpuController.utilizationGpu : null,
+          memUsedMB: typeof gpuController.memoryUsed === 'number' ? gpuController.memoryUsed : null,
+          memTotalMB: typeof gpuController.memoryTotal === 'number' ? gpuController.memoryTotal : null,
+          fanPercent: typeof gpuController.fanSpeed === 'number' ? gpuController.fanSpeed : null
+        }
+      : null;
+
+    const procList = processes && processes.list
+      ? processes.list
+          .filter((p) => p.pid !== 0)
+          .sort((a, b) => b.cpu - a.cpu)
+          .slice(0, 20)
+          .map((p) => ({
+            pid: p.pid,
+            name: p.name,
+            cpu: Math.round(p.cpu * 10) / 10,
+            mem: Math.round(p.mem * 10) / 10
+          }))
+      : [];
+
+    const procSummary = processes
+      ? { all: processes.all, running: processes.running, blocked: processes.blocked, sleeping: processes.sleeping }
+      : { all: 0, running: 0, blocked: 0, sleeping: 0 };
 
     const net = netStats[0] || {};
 
@@ -127,6 +176,8 @@ app.get('/api/stats', async (req, res) => {
         swapPercent: mem.swaptotal > 0 ? Math.round((mem.swapused / mem.swaptotal) * 1000) / 10 : 0
       },
       disks,
+      gpu,
+      processes: { ...procSummary, list: procList },
       network: {
         iface: net.iface,
         rxSec: net.rx_sec || 0,

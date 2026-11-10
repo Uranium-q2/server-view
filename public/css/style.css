@@ -286,6 +286,57 @@ body {
   z-index: 1;
 }
 
+.tm-thumb-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--green);
+}
+
+/* ---------- Process table ---------- */
+
+.proc-table-wrap {
+  overflow-x: auto;
+}
+
+.proc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.proc-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-card);
+}
+
+.proc-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+}
+
+.proc-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.proc-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---------- Login page ---------- */
 
 .login-page {
