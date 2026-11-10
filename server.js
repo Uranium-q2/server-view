@@ -16,30 +16,42 @@ const PORT = process.env.PORT || 8642;
 app.use(express.json());
 app.use(cookieParser());
 
-// ---------- Auth (Google Sign-In) ----------
+// ---------- Auth (Discord OAuth2) ----------
 
 app.get('/auth/config', (req, res) => {
-  res.json({ clientId: auth.CLIENT_ID, configured: auth.isConfigured() });
+  res.json({ configured: auth.isConfigured() });
 });
 
-app.post('/auth/google', async (req, res) => {
+app.get('/auth/discord', (req, res) => {
   if (!auth.isConfigured()) {
-    return res.status(500).json({ error: 'Server is missing GOOGLE_CLIENT_ID / ALLOWED_EMAILS in .env' });
+    return res.status(500).send('Server is missing Discord OAuth settings in .env (see .env.example).');
   }
+  const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : '/index.html';
+  res.redirect(auth.buildAuthorizeUrl(returnTo));
+});
+
+app.get('/auth/discord/callback', async (req, res) => {
+  const returnTo = typeof req.query.state === 'string' ? req.query.state : '/index.html';
+
+  if (req.query.error) {
+    return res.redirect(`/login.html?error=${encodeURIComponent('Discord sign-in was cancelled or denied.')}`);
+  }
+
   try {
-    const payload = await auth.verifyGoogleToken(req.body.credential);
-    if (!payload.email_verified || !auth.isAllowedEmail(payload.email)) {
-      return res.status(403).json({ error: `Access denied for ${payload.email}` });
+    const user = await auth.exchangeCodeForUser(req.query.code);
+    if (!auth.isAllowedUser(user.id)) {
+      return res.redirect(`/login.html?error=${encodeURIComponent(`Access denied for ${user.username} (id ${user.id}).`)}`);
     }
-    const cookieValue = auth.createSessionCookie(payload);
+    const cookieValue = auth.createSessionCookie(user);
     res.cookie(auth.COOKIE_NAME, cookieValue, {
       httpOnly: true,
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
-    res.json({ ok: true, email: payload.email, name: payload.name });
+    res.redirect(returnTo);
   } catch (err) {
-    res.status(401).json({ error: 'Invalid Google token', details: String(err.message || err) });
+    console.error('Discord auth failed:', err);
+    res.redirect(`/login.html?error=${encodeURIComponent('Discord sign-in failed. Please try again.')}`);
   }
 });
 
@@ -51,7 +63,7 @@ app.post('/auth/logout', (req, res) => {
 app.get('/auth/me', (req, res) => {
   const session = auth.getSessionFromRequest(req);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
-  res.json({ email: session.email, name: session.name });
+  res.json({ id: session.id, username: session.username, avatar: session.avatar });
 });
 
 // Everything below this line requires a valid session.

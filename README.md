@@ -6,19 +6,27 @@ A lightweight server dashboard styled after Pterodactyl, with three pages:
 - **Docker Containers** — read-only status (running/partial/stopped) and a "View logs" button (`docker compose logs --tail=300`) for whatever Docker Compose projects you register in Settings. There is deliberately no start/stop/restart and no terminal — only ever read-only commands run against the host, to keep the attack surface small.
 - **Settings** — add/edit/delete managed containers: just a name and the project's location (folder on disk).
 
-Every page requires signing in with Google first — see **Google login setup** below. This is meant to be run on a trusted local network only; login is an extra safety net, not a reason to expose it to the internet.
+Every page requires signing in with Discord first — see **Discord login setup** below. This is meant to be run on a trusted local network only; login is an extra safety net, not a reason to expose it to the internet.
 
-## Google login setup
+## Discord login setup
 
-1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create (or reuse) a project, then **Create Credentials → OAuth client ID → Web application**.
-2. Under **Authorized JavaScript origins**, add every origin you'll open the dashboard from, e.g. `http://localhost:8642` and `http://YOUR-SERVER-LAN-IP:8642`. No redirect URI or client secret is needed.
-3. Copy `.env.example` to `.env` and fill in:
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) → **New Application** (or reuse one you have).
+2. Open **OAuth2** in the left sidebar. Copy the **Client ID** and **Client Secret**.
+3. Under **Redirects**, click **Add Redirect** and add exactly:
    ```
-   GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
-   ALLOWED_EMAILS=you@gmail.com
+   http://YOUR-SERVER-LAN-IP:8642/auth/discord/callback
    ```
-   `ALLOWED_EMAILS` is a comma-separated allow-list — anyone signing in with a Google account not on this list is rejected even though Google itself authenticated them.
-4. Start the server (`npm start`, or `docker compose up -d --build`) and open the dashboard — you'll land on `/login.html`.
+   (must match byte-for-byte what's in `.env`, including `http://` and the port) — save.
+4. Get your Discord user ID: in Discord, **User Settings → Advanced → Developer Mode** (toggle on), then right-click your own profile/avatar → **Copy User ID**.
+5. Copy `.env.example` to `.env` and fill in:
+   ```
+   DISCORD_CLIENT_ID=your-application-id
+   DISCORD_CLIENT_SECRET=your-client-secret
+   DISCORD_REDIRECT_URI=http://YOUR-SERVER-LAN-IP:8642/auth/discord/callback
+   ALLOWED_DISCORD_IDS=123456789012345678
+   ```
+   `ALLOWED_DISCORD_IDS` is a comma-separated allow-list of Discord user IDs — anyone signing in with a Discord account not on this list is rejected even though Discord itself authenticated them.
+6. Start the server (`npm start`, or `docker compose up -d --build`) and open the dashboard — you'll land on `/login.html`.
 
 The session is a signed, httpOnly cookie (no server-side session store needed); its signing key is auto-generated into `data/session-secret.txt` on first run if `SESSION_SECRET` isn't set in `.env`, so sessions survive restarts.
 
@@ -99,10 +107,10 @@ Container settings (the list configured on the Settings page) are persisted in `
 ## Project layout
 
 - `server.js` — Express app + HTTP server (stats API, container CRUD, logs action, auth routes)
-- `lib/auth.js` — Google ID token verification, signed session cookies, the `requireAuth` gate
+- `lib/auth.js` — Discord OAuth2 code exchange, signed session cookies, the `requireAuth` gate
 - `lib/containers-store.js` — reads/writes `data/containers.json`
 - `lib/docker-actions.js` — runs the fixed, read-only `docker compose ps` / `docker compose logs` commands and streams output over SSE
 - `lib/host-exec.js` — the `nsenter` host-escape logic used when running inside Docker
-- `public/` — static frontend (vanilla JS, Chart.js for sparklines, Google Identity Services for login)
+- `public/` — static frontend (vanilla JS, Chart.js for sparklines)
 - `Dockerfile`, `docker-compose.yml` — containerization
-- `.env` (not committed — copy from `.env.example`) — Google client ID, allowed emails, optional session secret
+- `.env` (not committed — copy from `.env.example`) — Discord client ID/secret/redirect URI, allowed Discord user IDs, optional session secret

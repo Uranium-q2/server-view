@@ -44,8 +44,8 @@
       const res = await fetch('/auth/me');
       if (!res.ok) return;
       const user = await res.json();
-      const el = document.getElementById('userEmail');
-      if (el) el.textContent = user.email;
+      const el = document.getElementById('userName');
+      if (el) el.textContent = user.username;
     } catch {
       /* ignore */
     }
