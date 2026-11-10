@@ -177,7 +177,7 @@ function buildList() {
     el.className = 'tm-row' + (row.key === selectedKey ? ' active' : '');
     el.dataset.key = row.key;
     el.innerHTML = `
-      <canvas class="tm-thumb" id="thumb-${sanitizeKey(row.key)}"></canvas>
+      <div class="tm-thumb-wrap"><canvas id="thumb-${sanitizeKey(row.key)}"></canvas></div>
       <div class="tm-row-label">
         <strong>${row.label}</strong>
         <span class="muted small" id="rowsub-${sanitizeKey(row.key)}">—</span>
@@ -235,7 +235,7 @@ function renderDetail() {
       history.perCore.forEach((coreHistory, i) => {
         const wrap = document.createElement('div');
         wrap.className = 'core-cell';
-        wrap.innerHTML = `<span class="core-label">CPU ${i}</span><canvas></canvas>`;
+        wrap.innerHTML = `<span class="core-label">CPU ${i}</span><div class="core-chart-wrap"><canvas></canvas></div>`;
         grid.appendChild(wrap);
         const chart = makeThumbnail(wrap.querySelector('canvas'), '#3b82f6');
         chart.data.datasets[0].data = coreHistory.slice();
