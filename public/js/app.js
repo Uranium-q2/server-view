@@ -79,7 +79,11 @@ function recordUptimeSample(uptimeSeconds) {
 
 // ---------- Chart helpers ----------
 
-function makeThumbnail(canvas, color) {
+// yMax fixes the scale (e.g. 100 for a percentage) so a small real value
+// doesn't get visually blown up to fill the whole thumbnail just because
+// it's the largest number in an otherwise-mostly-null buffer. Omit it only
+// for metrics with no natural fixed ceiling (e.g. raw network bytes/sec).
+function makeThumbnail(canvas, color, yMax) {
   return new Chart(canvas, {
     type: 'line',
     data: {
@@ -98,7 +102,7 @@ function makeThumbnail(canvas, color) {
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
-      scales: { x: { display: false }, y: { display: false, min: 0 } },
+      scales: { x: { display: false }, y: { display: false, min: 0, max: yMax } },
       plugins: { legend: { display: false }, tooltip: { enabled: false } }
     }
   });
@@ -164,11 +168,11 @@ function buildList() {
   listEl.innerHTML = '';
 
   const rows = [
-    { key: 'cpu', label: 'CPU', color: '#3b82f6' },
-    { key: 'memory', label: 'Memory', color: '#e2a93b' },
-    { key: 'network', label: 'Network', color: '#3bc17a' },
-    { key: 'uptime', label: 'Uptime', color: '#8b5cf6' },
-    ...knownDiskMounts.map((mount) => ({ key: `disk:${mount}`, label: `Disk (${mount})`, color: '#e2503b' }))
+    { key: 'cpu', label: 'CPU', color: '#3b82f6', yMax: 100 },
+    { key: 'memory', label: 'Memory', color: '#e2a93b', yMax: 100 },
+    { key: 'network', label: 'Network', color: '#3bc17a', yMax: undefined },
+    { key: 'uptime', label: 'Uptime', color: '#8b5cf6', yMax: UPTIME_Y_MAX_HOURS },
+    ...knownDiskMounts.map((mount) => ({ key: `disk:${mount}`, label: `Disk (${mount})`, color: '#e2503b', yMax: 100 }))
   ];
 
   rows.forEach((row) => {
@@ -186,7 +190,7 @@ function buildList() {
     listEl.appendChild(el);
 
     const canvas = el.querySelector('canvas');
-    thumbnails[row.key] = makeThumbnail(canvas, row.color);
+    thumbnails[row.key] = makeThumbnail(canvas, row.color, row.yMax);
   });
 }
 
@@ -208,6 +212,53 @@ function destroyMainCharts() {
 
 function statRow(label, value) {
   return `<div class="stat-item"><span class="muted small">${label}</span><strong>${value}</strong></div>`;
+}
+
+// ---------- Manual Y-axis scale toolbar ----------
+
+let yMaxManual = false;
+let currentDefaultYMax = 100;
+
+function roundForInput(n) {
+  return Math.round(n * 100) / 100;
+}
+
+function scaleToolbarHtml() {
+  return `
+    <div class="chart-toolbar">
+      <label class="muted small" for="yMaxInput">Y-axis max</label>
+      <input type="number" id="yMaxInput" step="any" />
+      <button class="btn" id="applyScaleBtn">Apply</button>
+      <button class="btn" id="resetScaleBtn">Reset</button>
+    </div>
+  `;
+}
+
+function attachScaleToolbar(defaultMax) {
+  currentDefaultYMax = defaultMax;
+  const input = document.getElementById('yMaxInput');
+  const applyBtn = document.getElementById('applyScaleBtn');
+  const resetBtn = document.getElementById('resetScaleBtn');
+  if (!input || !mainChart) return;
+
+  input.value = roundForInput(defaultMax);
+
+  const applyFromInput = () => {
+    const val = parseFloat(input.value);
+    if (!Number.isFinite(val) || val <= 0) return;
+    yMaxManual = true;
+    mainChart.options.scales.y.max = val;
+    mainChart.update('none');
+  };
+
+  applyBtn.addEventListener('click', applyFromInput);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyFromInput(); });
+  resetBtn.addEventListener('click', () => {
+    yMaxManual = false;
+    input.value = roundForInput(currentDefaultYMax);
+    mainChart.options.scales.y.max = currentDefaultYMax;
+    mainChart.update('none');
+  });
 }
 
 // Only rebuilds the DOM + creates fresh Chart.js instances when the
@@ -243,45 +294,55 @@ function buildDetailStructure() {
         wrap.className = 'core-cell';
         wrap.innerHTML = `<span class="core-label">CPU ${i}</span><div class="core-chart-wrap"><canvas></canvas></div>`;
         grid.appendChild(wrap);
-        const chart = makeThumbnail(wrap.querySelector('canvas'), '#3b82f6');
+        const chart = makeThumbnail(wrap.querySelector('canvas'), '#3b82f6', 100);
         chart.data.datasets[0].data = coreHistory.slice();
         chart.update('none');
         perCoreCharts.push(chart);
       });
     } else {
-      body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+      yMaxManual = false;
+      body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
       mainChart = makeDetailChart(document.getElementById('mainChart'), [
         { label: 'CPU %', data: history.cpu.slice(), color: '#3b82f6' }
       ], { yMin: 0, yMax: 100 });
+      attachScaleToolbar(100);
     }
   } else if (selectedKey === 'memory') {
     title.textContent = 'Memory';
-    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+    yMaxManual = false;
+    body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Memory %', data: history.mem.slice(), color: '#e2a93b' }
     ], { yMin: 0, yMax: 100 });
+    attachScaleToolbar(100);
   } else if (selectedKey === 'network') {
     title.textContent = 'Network';
-    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
-    const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean));
+    yMaxManual = false;
+    body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+    const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean)) * 1.2;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Download B/s', data: history.netRx.slice(), color: '#3bc17a' },
       { label: 'Upload B/s', data: history.netTx.slice(), color: '#3b82f6' }
-    ], { yMin: 0, yMax: maxRate * 1.2 });
+    ], { yMin: 0, yMax: maxRate });
+    attachScaleToolbar(maxRate);
   } else if (selectedKey === 'uptime') {
     title.textContent = 'Uptime';
-    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+    yMaxManual = false;
+    body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     const points = uptimeHistory.map((p) => p.h);
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Uptime (hours)', data: points, color: '#8b5cf6' }
     ], { yMin: 0, yMax: UPTIME_Y_MAX_HOURS });
+    attachScaleToolbar(UPTIME_Y_MAX_HOURS);
   } else if (selectedKey.startsWith('disk:')) {
     const mount = selectedKey.slice(5);
     title.textContent = `Disk (${mount})`;
-    body.innerHTML = `<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+    yMaxManual = false;
+    body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Usage %', data: (history.disks[mount] || []).slice(), color: '#e2503b' }
     ], { yMin: 0, yMax: 100 });
+    attachScaleToolbar(100);
   }
 
   if (mainChart) {
@@ -331,8 +392,9 @@ function updateDetailData() {
   } else if (selectedKey === 'network' && mainChart) {
     mainChart.data.datasets[0].data = history.netRx.slice();
     mainChart.data.datasets[1].data = history.netTx.slice();
-    const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean));
-    mainChart.options.scales.y.max = maxRate * 1.2;
+    const maxRate = Math.max(1024, ...history.netRx.filter(Boolean), ...history.netTx.filter(Boolean)) * 1.2;
+    currentDefaultYMax = maxRate;
+    if (!yMaxManual) mainChart.options.scales.y.max = maxRate;
     mainChart.update('none');
     if (statGrid) {
       statGrid.innerHTML = [
