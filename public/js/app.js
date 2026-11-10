@@ -5,6 +5,13 @@ const UPTIME_MAX_POINTS = 10000; // ~1 week at 1-minute resolution
 const UPTIME_Y_MAX_HOURS = 100000; // "gigantic" fixed ceiling so only real long-haul uptime climbs it
 const UPTIME_STORAGE_KEY = 'sv_uptime_history';
 
+// Network has no natural 0-100% ceiling, so the thumbnail's y-max ratchets
+// up to the highest combined rx+tx seen this session (like Task Manager
+// scaling its network thumbnail to link speed, not to current traffic) -
+// rescaling it to the current 5-minute window's own max every tick would
+// make small background traffic look like it's maxing out the graph.
+let netThumbMax = 1024;
+
 function fmtBytes(bytes) {
   if (!bytes || bytes <= 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -170,7 +177,7 @@ function buildList() {
   const rows = [
     { key: 'cpu', label: 'CPU', color: '#3b82f6', yMax: 100 },
     { key: 'memory', label: 'Memory', color: '#e2a93b', yMax: 100 },
-    { key: 'network', label: 'Network', color: '#3bc17a', yMax: undefined },
+    { key: 'network', label: 'Network', color: '#3bc17a', yMax: netThumbMax },
     { key: 'uptime', label: 'Uptime', color: '#8b5cf6', yMax: UPTIME_Y_MAX_HOURS },
     ...knownDiskMounts.map((mount) => ({ key: `disk:${mount}`, label: `Disk (${mount})`, color: '#e2503b', yMax: 100 }))
   ];
@@ -228,6 +235,7 @@ function scaleToolbarHtml() {
     <div class="chart-toolbar">
       <label class="muted small" for="yMaxInput">Y-axis max</label>
       <input type="number" id="yMaxInput" step="any" />
+      <input type="range" id="yMaxSlider" />
       <button class="btn" id="applyScaleBtn">Apply</button>
       <button class="btn" id="resetScaleBtn">Reset</button>
     </div>
@@ -237,25 +245,40 @@ function scaleToolbarHtml() {
 function attachScaleToolbar(defaultMax) {
   currentDefaultYMax = defaultMax;
   const input = document.getElementById('yMaxInput');
+  const slider = document.getElementById('yMaxSlider');
   const applyBtn = document.getElementById('applyScaleBtn');
   const resetBtn = document.getElementById('resetScaleBtn');
-  if (!input || !mainChart) return;
+  if (!input || !slider || !mainChart) return;
 
   input.value = roundForInput(defaultMax);
+  slider.min = roundForInput(defaultMax / 100) || 0.01;
+  slider.max = roundForInput(defaultMax * 2);
+  slider.step = roundForInput(defaultMax / 200) || 0.01;
+  slider.value = defaultMax;
 
-  const applyFromInput = () => {
-    const val = parseFloat(input.value);
+  const setYMax = (val) => {
     if (!Number.isFinite(val) || val <= 0) return;
     yMaxManual = true;
     mainChart.options.scales.y.max = val;
     mainChart.update('none');
   };
 
+  const applyFromInput = () => setYMax(parseFloat(input.value));
+
   applyBtn.addEventListener('click', applyFromInput);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyFromInput(); });
+
+  // Dragging the slider rescales live and keeps the number field in sync.
+  slider.addEventListener('input', () => {
+    const val = parseFloat(slider.value);
+    input.value = roundForInput(val);
+    setYMax(val);
+  });
+
   resetBtn.addEventListener('click', () => {
     yMaxManual = false;
     input.value = roundForInput(currentDefaultYMax);
+    slider.value = currentDefaultYMax;
     mainChart.options.scales.y.max = currentDefaultYMax;
     mainChart.update('none');
   });
@@ -482,7 +505,9 @@ async function tick() {
     thumbnails.memory.data.datasets[0].data = history.mem.slice();
     thumbnails.memory.update('none');
     const netCombined = history.netRx.map((v, i) => (v || 0) + (history.netTx[i] || 0));
+    netThumbMax = Math.max(netThumbMax, (s.network.rxSec + s.network.txSec) * 1.15);
     thumbnails.network.data.datasets[0].data = netCombined;
+    thumbnails.network.options.scales.y.max = netThumbMax;
     thumbnails.network.update('none');
     thumbnails.uptime.data.datasets[0].data = uptimeHistory.slice(-BUFFER_LEN).map((p) => p.h);
     thumbnails.uptime.update('none');

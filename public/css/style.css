@@ -230,6 +230,11 @@ body {
   font-size: 13px;
 }
 
+.chart-toolbar input[type="range"] {
+  width: 160px;
+  accent-color: var(--accent);
+}
+
 .main-chart-wrap {
   position: relative;
   width: 100%;
