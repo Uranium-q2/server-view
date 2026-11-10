@@ -162,7 +162,6 @@ function makeDetailChart(canvas, datasets, { yMin = 0, yMax = 100, xLabels = nul
 // ---------- Resource list + detail selection ----------
 
 let knownDiskMounts = [];
-let knownHasGpu = false;
 const NO_CHART_KEYS = new Set(['processes']);
 const thumbnails = {}; // key -> Chart instance
 let mainChart = null;
@@ -180,7 +179,7 @@ function buildList() {
 
   const rows = [
     { key: 'cpu', label: 'CPU', color: '#3b82f6', yMax: 100 },
-    ...(knownHasGpu ? [{ key: 'gpu', label: 'GPU', color: '#22c1c3', yMax: 100 }] : []),
+    { key: 'gpu', label: 'GPU', color: '#22c1c3', yMax: 100 },
     { key: 'memory', label: 'Memory', color: '#e2a93b', yMax: 100 },
     { key: 'network', label: 'Network', color: '#3bc17a', yMax: netThumbMax },
     { key: 'uptime', label: 'Uptime', color: '#8b5cf6', yMax: UPTIME_Y_MAX_HOURS },
@@ -344,7 +343,14 @@ function buildDetailStructure() {
   } else if (selectedKey === 'gpu') {
     title.textContent = 'GPU';
     yMaxManual = false;
-    body.innerHTML = `${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>`;
+    body.innerHTML = `
+      <div class="gpu-empty" id="gpuEmpty">
+        <p class="muted">No GPU detected. Running in Docker? See the README's "GPU tab (NVIDIA)" section — the host needs the NVIDIA Container Toolkit and the container needs the device passed through. AMD/Intel GPUs need nothing extra, their temperature is read from <code>/sys/class/hwmon</code>.</p>
+      </div>
+      <div id="gpuContent">
+        ${scaleToolbarHtml()}<div class="main-chart-wrap"><canvas id="mainChart"></canvas></div><div class="stat-grid" id="statGrid"></div>
+      </div>
+    `;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
       { label: 'Temperature °C', data: history.gpuTemp.slice(), color: '#22c1c3' }
     ], { yMin: 0, yMax: 100 });
@@ -431,19 +437,30 @@ function updateDetailData() {
         ].join('');
       }
     }
-  } else if (selectedKey === 'gpu' && mainChart) {
-    mainChart.data.datasets[0].data = history.gpuTemp.slice();
-    mainChart.update('none');
-    if (statGrid) {
-      const g = s.gpu || {};
-      statGrid.innerHTML = [
-        statRow('Vendor', g.vendor || 'n/a'),
-        statRow('Model', g.model || 'n/a'),
-        statRow('Temperature', g.tempC != null ? `${g.tempC.toFixed(1)}°C` : 'n/a'),
-        statRow('Load', g.loadPercent != null ? `${g.loadPercent}%` : 'n/a'),
-        statRow('VRAM', g.memTotalMB != null ? `${fmtBytes((g.memUsedMB || 0) * 1024 * 1024)} / ${fmtBytes(g.memTotalMB * 1024 * 1024)}` : 'n/a'),
-        statRow('Fan', g.fanPercent != null ? `${g.fanPercent}%` : 'n/a')
-      ].join('');
+  } else if (selectedKey === 'gpu') {
+    const gpuEmpty = document.getElementById('gpuEmpty');
+    const gpuContent = document.getElementById('gpuContent');
+    if (!s.gpu) {
+      if (gpuEmpty) gpuEmpty.style.display = '';
+      if (gpuContent) gpuContent.style.display = 'none';
+    } else {
+      if (gpuEmpty) gpuEmpty.style.display = 'none';
+      if (gpuContent) gpuContent.style.display = '';
+      if (mainChart) {
+        mainChart.data.datasets[0].data = history.gpuTemp.slice();
+        mainChart.update('none');
+      }
+      if (statGrid) {
+        const g = s.gpu;
+        statGrid.innerHTML = [
+          statRow('Vendor', g.vendor || 'n/a'),
+          statRow('Model', g.model || 'n/a'),
+          statRow('Temperature', g.tempC != null ? `${g.tempC.toFixed(1)}°C` : 'n/a'),
+          statRow('Load', g.loadPercent != null ? `${g.loadPercent}%` : 'n/a'),
+          statRow('VRAM', g.memTotalMB != null ? `${fmtBytes((g.memUsedMB || 0) * 1024 * 1024)} / ${fmtBytes(g.memTotalMB * 1024 * 1024)}` : 'n/a'),
+          statRow('Fan', g.fanPercent != null ? `${g.fanPercent}%` : 'n/a')
+        ].join('');
+      }
     }
   } else if (selectedKey === 'processes') {
     const body = document.getElementById('procBody');
@@ -547,11 +564,8 @@ async function tick() {
 
     const mounts = s.disks.map((d) => d.mount);
     const mountsChanged = mounts.length !== knownDiskMounts.length || mounts.some((m, i) => m !== knownDiskMounts[i]);
-    const hasGpu = !!s.gpu;
-    const gpuChanged = hasGpu !== knownHasGpu;
-    if (mountsChanged || gpuChanged) {
+    if (mountsChanged) {
       knownDiskMounts = mounts;
-      knownHasGpu = hasGpu;
       mounts.forEach((m) => { if (!history.disks[m]) history.disks[m] = Array(BUFFER_LEN).fill(null); });
       buildList();
     }
@@ -603,7 +617,7 @@ async function tick() {
     setSub('rowsub-network', `↓ ${fmtRate(s.network.rxSec)} ↑ ${fmtRate(s.network.txSec)}`);
     setSub('rowsub-uptime', fmtUptime(s.uptime));
     s.disks.forEach((d) => setSub(`rowsub-${sanitizeKey(`disk:${d.mount}`)}`, `${d.usePercent}%`));
-    if (s.gpu) setSub('rowsub-gpu', s.gpu.tempC != null ? `${s.gpu.tempC.toFixed(0)}°C` : s.gpu.model);
+    setSub('rowsub-gpu', s.gpu ? (s.gpu.tempC != null ? `${s.gpu.tempC.toFixed(0)}°C` : s.gpu.model) : 'not detected');
     if (s.processes) setSub('rowsub-processes', `${s.processes.all} procs`);
 
     renderDetail();

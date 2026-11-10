@@ -298,6 +298,25 @@ body {
   color: var(--green);
 }
 
+.gpu-empty {
+  background: #0d1119;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+
+.gpu-empty p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.gpu-empty code {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
 /* ---------- Process table ---------- */
 
 .proc-table-wrap {
