@@ -10,6 +10,7 @@ services:
     # /sys are mounted read-only so the Overview page reads real host
     # CPU/RAM/temperature/fan data instead of the container's own (isolated,
     # meaningless) view of those.
+    network_mode: host
     uts: host
     volumes:
       - /proc:/proc:ro
