@@ -352,7 +352,7 @@ function buildDetailStructure() {
       </div>
     `;
     mainChart = makeDetailChart(document.getElementById('mainChart'), [
-      { label: 'Temperature °C', data: history.gpuTemp.slice(), color: '#22c1c3' }
+      { label: 'Load %', data: history.gpuLoad.slice(), color: '#22c1c3' }
     ], { yMin: 0, yMax: 100 });
     attachScaleToolbar(100);
   } else if (selectedKey === 'processes') {
@@ -447,7 +447,7 @@ function updateDetailData() {
       if (gpuEmpty) gpuEmpty.style.display = 'none';
       if (gpuContent) gpuContent.style.display = '';
       if (mainChart) {
-        mainChart.data.datasets[0].data = history.gpuTemp.slice();
+        mainChart.data.datasets[0].data = history.gpuLoad.slice();
         mainChart.update('none');
       }
       if (statGrid) {
@@ -604,7 +604,7 @@ async function tick() {
       }
     });
     if (thumbnails.gpu) {
-      thumbnails.gpu.data.datasets[0].data = history.gpuTemp.slice();
+      thumbnails.gpu.data.datasets[0].data = history.gpuLoad.slice();
       thumbnails.gpu.update('none');
     }
 

@@ -87,7 +87,7 @@ sudo systemctl enable --now server-view
 docker compose up -d --build
 ```
 
-`/proc` and `/sys` are bind-mounted read-only so the dashboard reads the host's real CPU/RAM/temperature data instead of the container's own isolated view, and `uts: host` makes it report the host's actual hostname instead of the container's auto-generated one. None of this requires `privileged` or `pid: host` — it doesn't run any commands against the host, it only reads already-exposed files.
+`/proc` and `/sys` are bind-mounted read-only so the dashboard reads the host's real CPU/RAM/temperature data instead of the container's own isolated view, `uts: host` makes it report the host's actual hostname instead of the container's auto-generated one, and `network_mode: host` makes the Network tab report the host's real interface traffic instead of the container's own isolated virtual NIC. None of this requires `privileged` or `pid: host` — it doesn't run any commands against the host, it only reads already-exposed files.
 
 `lm-sensors` must still be installed and configured on the host (see above) — the container only reads what the kernel already exposes under `/sys/class/hwmon`.
 
