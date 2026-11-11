@@ -3,12 +3,8 @@ services:
     build: .
     container_name: server-view
     restart: unless-stopped
-    # network_mode: host shares the HOST's network namespace, so the Network
-    # tab reports the host's real interface traffic instead of the
-    # container's own isolated virtual NIC (which only ever sees Docker's
-    # internal NAT traffic). With host networking, "ports" is ignored - the
-    # app is reachable directly on the host at 8642.
-    network_mode: host
+    ports:
+      - "8642:8642"
     # uts: host makes the container report the HOST's real hostname (e.g.
     # "pwserver") instead of its own auto-generated container ID. /proc and
     # /sys are mounted read-only so the Overview page reads real host

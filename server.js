@@ -3,10 +3,32 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const http = require('http');
+const { execFile } = require('child_process');
 const cookieParser = require('cookie-parser');
 const si = require('systeminformation');
 
 const auth = require('./lib/auth');
+
+// systeminformation drops nvidia-smi's utilization fields whenever the GPU
+// is idle (0% load, the normal state for a server GPU): its graphics.js
+// does `if (nvidia.utilizationGpu) controller.utilizationGpu = ...`, and 0
+// is falsy, so the field is simply never set on the controller object. Read
+// it directly from nvidia-smi ourselves instead of trusting that field.
+function readNvidiaUtilization() {
+  return new Promise((resolve) => {
+    execFile(
+      'nvidia-smi',
+      ['--query-gpu=utilization.gpu,utilization.memory', '--format=csv,noheader,nounits'],
+      { timeout: 2000 },
+      (err, stdout) => {
+        if (err) return resolve(null);
+        const [gpu, mem] = stdout.trim().split(',').map((v) => parseFloat(v.trim()));
+        if (Number.isNaN(gpu)) return resolve(null);
+        resolve({ utilizationGpu: gpu, utilizationMemory: Number.isNaN(mem) ? null : mem });
+      }
+    );
+  });
+}
 
 const app = express();
 const PORT = process.env.PORT || 8642;
@@ -118,12 +140,18 @@ app.get('/api/stats', async (req, res) => {
         null
       : null;
 
+    const nvidiaUtil = gpuController && /nvidia/i.test(gpuController.vendor || '')
+      ? await readNvidiaUtilization()
+      : null;
+
     const gpu = gpuController
       ? {
           vendor: gpuController.vendor || 'Unknown',
           model: gpuController.model || 'GPU',
           tempC: typeof gpuController.temperatureGpu === 'number' ? gpuController.temperatureGpu : null,
-          loadPercent: typeof gpuController.utilizationGpu === 'number' ? gpuController.utilizationGpu : null,
+          loadPercent: nvidiaUtil
+            ? nvidiaUtil.utilizationGpu
+            : typeof gpuController.utilizationGpu === 'number' ? gpuController.utilizationGpu : null,
           memUsedMB: typeof gpuController.memoryUsed === 'number' ? gpuController.memoryUsed : null,
           memTotalMB: typeof gpuController.memoryTotal === 'number' ? gpuController.memoryTotal : null,
           fanPercent: typeof gpuController.fanSpeed === 'number' ? gpuController.fanSpeed : null
