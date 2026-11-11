@@ -2,7 +2,7 @@ const POLL_MS = 2000;
 const BUFFER_LEN = 150; // ~5 min of history at 2s/sample, for CPU/Mem/Network/Disk
 const UPTIME_SAMPLE_MS = 60000; // sample uptime into long-term history once a minute
 const UPTIME_MAX_POINTS = 10000; // ~1 week at 1-minute resolution
-const UPTIME_Y_MAX_HOURS = 100000; // "gigantic" fixed ceiling so only real long-haul uptime climbs it
+const UPTIME_Y_MAX_HOURS = 5000; // default chart ceiling (slider allows up to 2x = 10000h)
 const UPTIME_STORAGE_KEY = 'sv_uptime_history';
 
 // Network has no natural 0-100% ceiling, so the thumbnail's y-max ratchets
